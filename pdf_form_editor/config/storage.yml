@@ -32,3 +32,10 @@ local:
 #   service: Mirror
 #   primary: local
 #   mirrors: [ amazon, google, microsoft ]
+
+# Supabase Storage configuration
+supabase:
+  service: Supabase
+  url: <%= ENV["SUPABASE_URL"] %>
+  key: <%= ENV["SUPABASE_ANON_KEY"] %>
+  bucket: pdfs
