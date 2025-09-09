@@ -249,12 +249,27 @@ function pdfEditor() {
       this.errorMessage = '';
       
       try {
-        const pdfUrl = '<%= rails_blob_path(@pdf_document.pdf_file) %>';
-        const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        
-        const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-        this.pdfDoc = pdf;
+        <% if @pdf_document.pdf_file.attached? %>
+          const pdfUrl = '<%= url_for(@pdf_document.pdf_file) %>';
+          console.log('Loading PDF from:', pdfUrl);
+          
+          // Load PDF.js library
+          if (typeof pdfjsLib === 'undefined') {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            document.head.appendChild(script);
+            await new Promise(resolve => script.onload = resolve);
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          }
+          
+          // Fetch PDF as blob to avoid CORS issues
+          const response = await fetch(pdfUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+          this.pdfDoc = pdf;
+        <% else %>
+          throw new Error('No PDF file attached');
+        <% end %>
         
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: this.scale });

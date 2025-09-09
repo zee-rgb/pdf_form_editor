@@ -23,7 +23,7 @@ class PdfDocumentsController < ApplicationController
     @pdf_document.status = :uploaded
 
     if @pdf_document.save
-      redirect_to @pdf_document, notice: "PDF uploaded successfully!"
+      redirect_to edit_pdf_document_path(@pdf_document), notice: "PDF uploaded successfully!"
     else
       render :new, status: :unprocessable_entity
     end
