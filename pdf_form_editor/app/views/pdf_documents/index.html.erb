@@ -1,0 +1,153 @@
+<div class="bg-gray-50 min-h-screen">
+  <% if @pdf_documents.empty? %>
+    <!-- Welcome/Onboarding Section -->
+    <div class="bg-gradient-to-br from-blue-50 to-indigo-100 py-16">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center">
+          <h1 class="text-4xl sm:text-6xl font-bold text-gray-900 mb-6">
+            Welcome to <span class="text-blue-600">PDF Form Editor</span>
+          </h1>
+          <p class="text-xl sm:text-2xl text-gray-600 mb-8 max-w-3xl mx-auto">
+            Transform non-fillable PDFs into editable forms. Add text, signatures, and more with just a click.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+            <%= link_to new_pdf_document_path, class: "bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors" do %>
+              Upload Your First PDF
+            <% end %>
+            <a href="/sample_form.pdf" target="_blank" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-8 py-4 rounded-lg text-lg font-semibold transition-colors">
+              Download Sample PDF
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- How it works Section -->
+    <div class="py-16 bg-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+          <h2 class="text-3xl font-bold text-gray-900 mb-4">How it works</h2>
+          <p class="text-xl text-gray-600">Simple, powerful PDF editing in three steps</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div class="text-center">
+            <div class="bg-blue-100 rounded-full w-4 h-4 flex items-center justify-center mx-auto mb-4">
+              <span class="text-blue-600 font-bold text-xs">1</span>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">1. Upload PDF</h3>
+            <p class="text-gray-600">Drag and drop your PDF file or browse to select it. We support all standard PDF formats.</p>
+          </div>
+
+          <div class="text-center">
+            <div class="bg-green-100 rounded-full w-4 h-4 flex items-center justify-center mx-auto mb-4">
+              <span class="text-green-600 font-bold text-xs">2</span>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">2. Edit & Sign</h3>
+            <p class="text-gray-600">Click anywhere to add text. Draw, upload, or type signatures with beautiful cursive fonts.</p>
+          </div>
+
+          <div class="text-center">
+            <div class="bg-purple-100 rounded-full w-4 h-4 flex items-center justify-center mx-auto mb-4">
+              <span class="text-purple-600 font-bold text-xs">3</span>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">3. Download</h3>
+            <p class="text-gray-600">Export your completed PDF with all changes preserved. Ready to print or share.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features Grid -->
+    <div class="py-16 bg-gray-50">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-12">
+          <h2 class="text-3xl font-bold text-gray-900 mb-4">Why choose PDF Form Editor?</h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div class="bg-white p-6 rounded-lg shadow-sm">
+            <h3 class="font-semibold text-gray-900 mb-2">Mobile Friendly</h3>
+            <p class="text-sm text-gray-600">Works perfectly on all devices - desktop, tablet, and mobile.</p>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg shadow-sm">
+            <h3 class="font-semibold text-gray-900 mb-2">Secure & Private</h3>
+            <p class="text-sm text-gray-600">Your documents are secure. Only you can access your PDFs.</p>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg shadow-sm">
+            <h3 class="font-semibold text-gray-900 mb-2">Lightning Fast</h3>
+            <p class="text-sm text-gray-600">Instant PDF loading and real-time editing with no delays.</p>
+          </div>
+
+          <div class="bg-white p-6 rounded-lg shadow-sm">
+            <h3 class="font-semibold text-gray-900 mb-2">Easy to Use</h3>
+            <p class="text-sm text-gray-600">Intuitive interface that anyone can use. No training required.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <!-- Existing PDFs Section -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div class="flex justify-between items-center mb-8">
+        <div>
+          <h1 class="text-4xl font-bold text-gray-900 mb-2">My PDF Documents</h1>
+          <p class="text-xl text-gray-600">Upload, edit, and manage your PDF forms</p>
+        </div>
+        <%= link_to new_pdf_document_path, class: "bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors" do %>
+          Upload New PDF
+        <% end %>
+      </div>
+
+      <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <% @pdf_documents.each do |pdf_document| %>
+          <div class="bg-white overflow-hidden shadow rounded-lg">
+            <div class="p-6">
+              <div class="flex items-center">
+                <div class="flex-shrink-0">
+                  <svg class="h-8 w-8 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
+                  </svg>
+                </div>
+                <div class="ml-4 flex-1">
+                  <h3 class="text-lg font-medium text-gray-900 truncate">
+                    <%= pdf_document.title %>
+                  </h3>
+                  <div class="mt-1 flex items-center">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <%=
+                      case pdf_document.status
+                      when 'uploaded' then 'bg-gray-100 text-gray-800'
+                      when 'processing' then 'bg-yellow-100 text-yellow-800'
+                      when 'completed' then 'bg-green-100 text-green-800'
+                      when 'error' then 'bg-red-100 text-red-800'
+                      end
+                    %>">
+                      <%= pdf_document.status.humanize %>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-6 flex justify-between items-center">
+                <p class="text-sm text-gray-500">
+                  <%= time_ago_in_words(pdf_document.created_at) %> ago
+                </p>
+                <div class="flex space-x-2">
+                  <%= link_to "Edit", edit_pdf_document_path(pdf_document), class: "text-blue-600 hover:text-blue-900 text-sm font-medium" %>
+                  <% if pdf_document.processed_pdf.attached? %>
+                    <%= link_to "Download", download_pdf_document_path(pdf_document), class: "text-green-600 hover:text-green-900 text-sm font-medium" %>
+                  <% end %>
+                  <%= link_to "Delete", pdf_document_path(pdf_document), method: :delete,
+                      data: { confirm: "Are you sure?" },
+                      class: "text-red-600 hover:text-red-900 text-sm font-medium" %>
+                </div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+</div>

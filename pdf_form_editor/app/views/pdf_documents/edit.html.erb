@@ -1,0 +1,468 @@
+<div x-data="pdfEditor()" class="min-h-screen bg-gray-50">
+  <!-- Header -->
+  <div class="bg-white shadow-sm border-b">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 space-y-4 sm:space-y-0">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+          <div>
+            <h1 class="text-xl sm:text-2xl font-semibold text-gray-900"><%= @pdf_document.title %></h1>
+            <p class="text-xs sm:text-sm text-gray-500">Click on the PDF to add text • Use tools below to add signatures</p>
+          </div>
+          <div x-show="hasChanges" class="flex items-center space-x-2 text-sm text-amber-700 bg-amber-50 px-3 py-1 rounded-full">
+            <svg class="w-1.5 h-1.5" fill="currentColor" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047ZM8 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
+            </svg>
+            <span>Unsaved changes</span>
+          </div>
+        </div>
+        <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+          <button x-show="hasChanges" 
+                  @click="downloadPdf()" 
+                  class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2">
+            <svg class="w-1.5 h-1.5" fill="currentColor" viewBox="0 0 16 16">
+              <path d="M8.75 2.75a.75.75 0 0 0-1.5 0v5.69L5.03 6.22a.75.75 0 0 0-1.06 1.06l3.5 3.5a.75.75 0 0 0 1.06 0l3.5-3.5a.75.75 0 0 0-1.06-1.06L8.75 8.44V2.75Z"/>
+              <path d="M3.5 9.75a.75.75 0 0 0-1.5 0v1.5A2.75 2.75 0 0 0 4.75 14h6.5A2.75 2.75 0 0 0 14 11.25v-1.5a.75.75 0 0 0-1.5 0v1.5c0 .69-.56 1.25-1.25 1.25h-6.5c-.69 0-1.25-.56-1.25-1.25v-1.5Z"/>
+            </svg>
+            <span>Download PDF</span>
+          </button>
+          <%= link_to pdf_documents_path, class: "bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center justify-center space-x-2" do %>
+            <svg class="w-1.5 h-1.5" fill="currentColor" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M9.78 12.78a.75.75 0 0 1-1.06 0L4.47 8.53a.75.75 0 0 1 0-1.06l4.25-4.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042L6.06 8l3.72 3.72a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd"/>
+            </svg>
+            <span>Back to PDFs</span>
+          <% end %>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <!-- Tools Sidebar -->
+      <div class="lg:col-span-1 order-2 lg:order-1">
+        <div class="bg-white rounded-lg shadow p-4 lg:p-6 lg:sticky lg:top-6">
+          <h3 class="text-lg font-medium text-gray-900 mb-4">Tools</h3>
+          
+          <!-- Text Tool -->
+          <div class="mb-6">
+            <label for="textInput" class="block text-sm font-medium text-gray-700 mb-2">Add Text</label>
+            <input x-model="textInput" 
+                   id="textInput"
+                   type="text" 
+                   placeholder="Enter text to add"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            <p class="mt-1 text-xs text-gray-500">Click on the PDF to place text</p>
+          </div>
+
+          <!-- Signature Tools -->
+          <div class="mb-6">
+            <h4 class="text-sm font-medium text-gray-700 mb-3">Add Signature</h4>
+            
+            <!-- Signature Tabs -->
+            <div class="border-b border-gray-200">
+              <nav class="-mb-px flex space-x-8">
+                <button @click="activeTab = 'draw'" 
+                        :class="activeTab === 'draw' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Draw
+                </button>
+                <button @click="activeTab = 'upload'" 
+                        :class="activeTab === 'upload' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Upload
+                </button>
+                <button @click="activeTab = 'type'" 
+                        :class="activeTab === 'type' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Type
+                </button>
+              </nav>
+            </div>
+
+            <!-- Draw Signature Tab -->
+            <div x-show="activeTab === 'draw'" class="mt-4">
+              <canvas x-ref="signatureCanvas" 
+                      @mousedown="startDrawing($event)"
+                      @mousemove="draw($event)" 
+                      @mouseup="stopDrawing()"
+                      @mouseleave="stopDrawing()"
+                      width="280" 
+                      height="120" 
+                      class="border border-gray-300 rounded cursor-crosshair bg-white">
+              </canvas>
+              <div class="mt-2 flex justify-between">
+                <button @click="clearSignature()" class="text-sm text-gray-600 hover:text-gray-800">Clear</button>
+                <button @click="useDrawnSignature()" class="text-sm text-blue-600 hover:text-blue-800">Use Signature</button>
+              </div>
+            </div>
+
+            <!-- Upload Signature Tab -->
+            <div x-show="activeTab === 'upload'" class="mt-4">
+              <input type="file" 
+                     accept="image/*" 
+                     @change="handleImageUpload($event)"
+                     class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+              <div x-show="uploadedSignature" class="mt-2">
+                <img x-bind:src="uploadedSignature" alt="Uploaded signature preview" class="max-w-full h-16 border border-gray-300 rounded">
+                <button @click="useUploadedSignature()" class="mt-2 text-sm text-blue-600 hover:text-blue-800">Use Signature</button>
+              </div>
+            </div>
+
+            <!-- Type Signature Tab -->
+            <div x-show="activeTab === 'type'" class="mt-4">
+              <input x-model="typedSignature" 
+                     type="text" 
+                     placeholder="Type your name"
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <select x-model="signatureFont" class="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm">
+                <option value="'Dancing Script', cursive">Dancing Script</option>
+                <option value="'Great Vibes', cursive">Great Vibes</option>
+                <option value="'Allura', cursive">Allura</option>
+              </select>
+              <div x-show="typedSignature" class="mt-2 p-2 border border-gray-300 rounded bg-white">
+                <div x-text="typedSignature" 
+                     :style="`font-family: ${signatureFont}; font-size: 24px;`"
+                     class="text-center text-gray-800">
+                </div>
+              </div>
+              <button @click="useTypedSignature()" 
+                      x-show="typedSignature"
+                      class="mt-2 text-sm text-blue-600 hover:text-blue-800">
+                Use Signature
+              </button>
+            </div>
+          </div>
+
+          <!-- Mode Indicator -->
+          <div class="text-sm text-gray-600">
+            <p><strong>Mode:</strong> <span x-text="currentMode"></span></p>
+            <div x-show="currentMode === 'text'" class="mt-2 p-2 bg-blue-50 rounded">
+              Click anywhere on the PDF to add: "<span x-text="textInput"></span>"
+            </div>
+            <div x-show="currentMode === 'signature'" class="mt-2 p-2 bg-green-50 rounded">
+              Click anywhere on the PDF to place your signature
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PDF Viewer -->
+      <div class="lg:col-span-3 order-1 lg:order-2">
+        <div class="bg-white rounded-lg shadow p-4 lg:p-6">
+          <!-- Loading State -->
+          <div x-show="loading" class="flex flex-col items-center justify-center h-96">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p class="text-gray-600">Loading PDF...</p>
+          </div>
+
+          <!-- Error State -->
+          <div x-show="!loading && error" class="flex flex-col items-center justify-center h-96 text-center">
+            <svg class="w-4 h-4 text-red-400 mb-4" fill="currentColor" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575L6.457 1.047ZM8 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 5Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">Error Loading PDF</h3>
+            <p class="text-gray-600 mb-4" x-text="errorMessage"></p>
+            <button @click="loadPDF()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+              Try Again
+            </button>
+          </div>
+          
+          <!-- PDF Canvas -->
+          <div x-show="!loading && !error" class="text-center overflow-x-auto">
+            <div class="relative inline-block">
+              <canvas x-ref="pdfCanvas" 
+                      @click="handleCanvasClick($event)"
+                      @touchstart="handleCanvasClick($event)"
+                      class="border border-gray-300 rounded-lg shadow-lg cursor-crosshair max-w-full h-auto touch-manipulation"></canvas>
+              
+              <!-- Click indicator -->
+              <div x-show="currentMode === 'text' && textInput.trim()" 
+                   class="absolute top-2 left-2 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                Click to place text: "<span x-text="textInput"></span>"
+              </div>
+              
+              <div x-show="currentMode === 'signature' && currentSignatureData" 
+                   class="absolute top-2 left-2 bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
+                Click to place signature
+              </div>
+            </div>
+          </div>
+
+          <!-- Success/Error Messages -->
+          <div x-show="message" 
+               x-transition:enter="transition ease-out duration-300"
+               x-transition:enter-start="opacity-0 transform translate-y-2"
+               x-transition:enter-end="opacity-100 transform translate-y-0"
+               x-transition:leave="transition ease-in duration-200"
+               x-transition:leave-start="opacity-100 transform translate-y-0"
+               x-transition:leave-end="opacity-0 transform translate-y-2"
+               class="mt-4 p-3 rounded-md"
+               :class="messageType === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg x-show="messageType === 'success'" class="h-1.5 w-1.5 text-green-400" fill="currentColor" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z" clip-rule="evenodd"/>
+                </svg>
+                <svg x-show="messageType === 'error'" class="h-1.5 w-1.5 text-red-400" fill="currentColor" viewBox="0 0 16 16">
+                  <path fill-rule="evenodd" d="M2.343 13.657A8 8 0 1 1 13.658 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.751.751 0 0 0-1.042.018.751.751 0 0 0-.018 1.042L6.94 8 4.97 9.97a.749.749 0 0 0 .326 1.275.749.749 0 0 0 .734-.215L8 9.06l1.97 1.97a.749.749 0 0 0 1.275-.326.749.749 0 0 0-.215-.734L9.06 8l1.97-1.97a.749.749 0 0 0-.326-1.275.749.749 0 0 0-.734.215L8 6.94Z" clip-rule="evenodd"/>
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm font-medium" x-text="message"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function pdfEditor() {
+  return {
+    loading: true,
+    error: false,
+    errorMessage: '',
+    message: '',
+    messageType: 'success',
+    activeTab: 'draw',
+    textInput: '',
+    typedSignature: '',
+    signatureFont: "'Dancing Script', cursive",
+    currentMode: 'text',
+    hasChanges: false,
+    isDrawing: false,
+    uploadedSignature: null,
+    currentSignatureData: null,
+    pdfDoc: null,
+    scale: 1.5,
+
+    init() {
+      this.loadPDF();
+      this.initSignatureCanvas();
+    },
+
+    async loadPDF() {
+      this.loading = true;
+      this.error = false;
+      this.errorMessage = '';
+      
+      try {
+        const pdfUrl = '<%= rails_blob_path(@pdf_document.pdf_file) %>';
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        
+        const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+        this.pdfDoc = pdf;
+        
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: this.scale });
+        
+        const canvas = this.$refs.pdfCanvas;
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        this.loading = false;
+        this.showMessage('PDF loaded successfully!', 'success');
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        this.loading = false;
+        this.error = true;
+        this.errorMessage = 'Failed to load PDF. Please check the file and try again.';
+      }
+    },
+
+    showMessage(text, type = 'success') {
+      this.message = text;
+      this.messageType = type;
+      setTimeout(() => {
+        this.message = '';
+      }, 3000);
+    },
+
+    initSignatureCanvas() {
+      const canvas = this.$refs.signatureCanvas;
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+    },
+
+    handleCanvasClick(event) {
+      // Handle both click and touch events
+      const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+      const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+      
+      const simulatedEvent = {
+        clientX: clientX,
+        clientY: clientY
+      };
+      
+      if (this.currentMode === 'text' && this.textInput.trim()) {
+        this.addTextAtPosition(simulatedEvent);
+      } else if (this.currentMode === 'signature' && this.currentSignatureData) {
+        this.addSignatureAtPosition(simulatedEvent);
+      }
+    },
+
+    async addTextAtPosition(event) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / this.scale;
+      const y = (rect.height - (event.clientY - rect.top)) / this.scale;
+
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: x,
+            y: y,
+            text: this.textInput,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Text added successfully!', 'success');
+          this.textInput = '';
+          // Reload PDF to show changes
+          this.loadPDF();
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add text', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding text:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    async addSignatureAtPosition(event) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) / this.scale;
+      const y = (rect.height - (event.clientY - rect.top)) / this.scale;
+
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_signature`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: x,
+            y: y,
+            signature_data: this.currentSignatureData,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Signature added successfully!', 'success');
+          this.currentMode = 'text';
+          this.currentSignatureData = null;
+          // Reload PDF to show changes
+          this.loadPDF();
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add signature', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding signature:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    startDrawing(event) {
+      this.isDrawing = true;
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    },
+
+    draw(event) {
+      if (!this.isDrawing) return;
+      
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    },
+
+    stopDrawing() {
+      this.isDrawing = false;
+    },
+
+    clearSignature() {
+      const canvas = this.$refs.signatureCanvas;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    },
+
+    useDrawnSignature() {
+      this.currentSignatureData = this.$refs.signatureCanvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.uploadedSignature = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+
+    useUploadedSignature() {
+      this.currentSignatureData = this.uploadedSignature;
+      this.currentMode = 'signature';
+    },
+
+    useTypedSignature() {
+      // Create canvas to render typed signature
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      const textWidth = ctx.measureText(this.typedSignature).width;
+      
+      canvas.width = textWidth + 20;
+      canvas.height = 60;
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      ctx.fillStyle = 'black';
+      ctx.fillText(this.typedSignature, 10, 45);
+      
+      this.currentSignatureData = canvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    downloadPdf() {
+      if (this.hasChanges) {
+        window.location.href = `/pdf_documents/<%= @pdf_document.id %>/download`;
+      }
+    }
+  }
+}
+</script>
