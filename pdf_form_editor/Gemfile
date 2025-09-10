@@ -47,6 +47,9 @@ gem "image_processing", "~> 1.2"
 # PDF processing
 gem "hexapdf"
 
+# Supabase storage integration (using AWS S3 SDK for S3-compatible API)
+gem "aws-sdk-s3", require: false
+
 # Authentication
 gem "devise"
 

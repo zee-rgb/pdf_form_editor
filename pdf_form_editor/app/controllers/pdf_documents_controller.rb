@@ -1,5 +1,5 @@
 class PdfDocumentsController < ApplicationController
-  before_action :set_pdf_document, only: [ :show, :edit, :update, :destroy, :add_text, :add_signature, :download ]
+  before_action :set_pdf_document, only: [ :show, :edit, :simple_edit, :basic_view, :embed_view, :update, :destroy, :add_text, :add_signature, :download ]
   after_action :verify_authorized, except: :index
   after_action :verify_policy_scoped, only: :index
 
@@ -32,6 +32,22 @@ class PdfDocumentsController < ApplicationController
   def edit
     authorize @pdf_document
     # PDF editing page with tools
+  end
+
+  def simple_edit
+    authorize @pdf_document
+    # Simplified PDF viewing/editing page that uses basic PDF.js
+    render 'simple_view'
+  end
+  
+  def basic_view
+    authorize @pdf_document
+    # Extremely simplified PDF viewer with minimal JS
+  end
+  
+  def embed_view
+    authorize @pdf_document
+    # HTML-only PDF viewer with embed tag - no JavaScript needed
   end
 
   def update

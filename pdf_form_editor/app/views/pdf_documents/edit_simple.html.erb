@@ -1,0 +1,96 @@
+<%# Simplified PDF editor view to fix loading issues %>
+<div class="bg-white rounded-lg shadow p-4">
+  <h1 class="text-xl font-bold mb-4"><%= @pdf_document.title %></h1>
+  
+  <%# Loading message %>
+  <div id="loadingMessage" class="flex flex-col items-center justify-center h-96">
+    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+    <p class="text-gray-600">Loading PDF...</p>
+  </div>
+  
+  <%# Error message %>
+  <div id="errorMessage" class="hidden text-center text-red-600 py-8">
+    Failed to load PDF.
+  </div>
+  
+  <%# PDF Canvas %>
+  <div class="flex justify-center">
+    <canvas 
+      id="pdfCanvas" 
+      data-pdf-url="<%= url_for(@pdf_document.pdf_file) if @pdf_document.pdf_file.attached? %>"
+      class="border shadow-lg hidden">
+    </canvas>
+  </div>
+  
+  <%# Actions %>
+  <div class="mt-4 flex justify-between">
+    <%= link_to "Back to PDFs", pdf_documents_path, class: "bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded" %>
+    
+    <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" %>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Make sure PDF.js is loaded
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+    
+    // Get elements
+    const canvas = document.getElementById('pdfCanvas');
+    const loadingMessage = document.getElementById('loadingMessage');
+    const errorMessage = document.getElementById('errorMessage');
+    
+    // Get PDF URL
+    const pdfUrl = canvas.dataset.pdfUrl;
+    if (!pdfUrl) {
+      console.error('No PDF URL provided');
+      loadingMessage.style.display = 'none';
+      errorMessage.style.display = 'block';
+      errorMessage.textContent = 'No PDF file attached';
+      return;
+    }
+    
+    console.log('Loading PDF from:', pdfUrl);
+    
+    // Render PDF
+    fetch(pdfUrl)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+        }
+        return response.arrayBuffer();
+      })
+      .then(buffer => {
+        return window.pdfjsLib.getDocument({ data: buffer }).promise;
+      })
+      .then(pdf => {
+        console.log('PDF loaded successfully, pages:', pdf.numPages);
+        return pdf.getPage(1); // Get the first page
+      })
+      .then(page => {
+        const scale = 1.5;
+        const viewport = page.getViewport({ scale: scale });
+        const context = canvas.getContext('2d');
+        
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        canvas.style.display = 'block';
+        
+        return page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+      })
+      .then(() => {
+        console.log('PDF rendered successfully');
+        loadingMessage.style.display = 'none';
+      })
+      .catch(error => {
+        console.error('Error loading PDF:', error);
+        loadingMessage.style.display = 'none';
+        errorMessage.style.display = 'block';
+        errorMessage.textContent = 'Failed to load PDF: ' + error.message;
+      });
+  });
+</script>

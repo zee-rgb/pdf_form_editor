@@ -1,0 +1,703 @@
+<%# Header Section %>
+<div x-data="pdfEditor()" class="min-h-screen bg-gray-50" @click.away="showEditControls = false; selectedOverlay = null; redrawOverlays();">
+  <%# Top Bar - Simple and Responsive %>
+  <div class="bg-white shadow-sm p-4">
+    <div class="container mx-auto flex flex-wrap items-center justify-between">
+      <h1 class="text-xl font-semibold"><%= @pdf_document.title %></h1>
+      
+      <div class="flex flex-wrap items-center space-x-2 mt-2 sm:mt-0">
+        <button x-show="hasChanges" 
+                @click="savePdf()" 
+                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+          Save Changes
+        </button>
+        <button @click="downloadPdf()" 
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+          Download PDF
+        </button>
+        <%= link_to "Back to PDFs", pdf_documents_path, class: "bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium" %>
+      </div>
+    </div>
+  </div>
+
+  <%# Main Content %>
+  <div class="container mx-auto px-4 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <%# Tools Sidebar %>
+      <div class="order-2 lg:order-1 lg:col-span-1">
+        <div class="bg-white rounded-lg shadow p-4 lg:sticky lg:top-6">
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Tools</h2>
+          
+          <%# Text Tool %>
+          <div class="mb-6">
+            <label for="textInput" class="block text-sm font-medium text-gray-700 mb-2">Add Text</label>
+            <input x-model="textInput" 
+                   id="textInput"
+                   type="text" 
+                   placeholder="Enter text to add"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md">
+            <p class="mt-1 text-xs text-gray-500">Click on the PDF to place text</p>
+          </div>
+          
+          <%# Signature Tools %>
+          <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Add Signature</h3>
+            
+            <%# Signature Tabs %>
+            <div class="border-b border-gray-200">
+              <nav class="-mb-px flex space-x-6">
+                <button @click="activeTab = 'draw'" 
+                        :class="activeTab === 'draw' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Draw
+                </button>
+                <button @click="activeTab = 'upload'" 
+                        :class="activeTab === 'upload' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Upload
+                </button>
+                <button @click="activeTab = 'type'" 
+                        :class="activeTab === 'type' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Type
+                </button>
+              </nav>
+            </div>
+            
+            <%# Draw Signature Tab %>
+            <div x-show="activeTab === 'draw'" class="mt-4">
+              <canvas x-ref="signatureCanvas" 
+                      @mousedown="startDrawing($event)"
+                      @mousemove="draw($event)" 
+                      @mouseup="stopDrawing()"
+                      @mouseleave="stopDrawing()"
+                      width="280" 
+                      height="120" 
+                      class="border border-gray-300 rounded cursor-crosshair bg-white">
+              </canvas>
+              <div class="mt-2 flex justify-between">
+                <button @click="clearSignature()" class="text-sm text-gray-600">Clear</button>
+                <button @click="useDrawnSignature()" class="text-sm text-blue-600">Use Signature</button>
+              </div>
+            </div>
+            
+            <%# Upload Signature Tab %>
+            <div x-show="activeTab === 'upload'" class="mt-4">
+              <input type="file" 
+                     accept="image/*" 
+                     @change="handleImageUpload($event)"
+                     class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:bg-blue-50 file:text-blue-700">
+              <div x-show="uploadedSignature" class="mt-2">
+                <img x-bind:src="uploadedSignature" alt="Uploaded signature" class="max-w-full h-16 border border-gray-300 rounded">
+                <button @click="useUploadedSignature()" class="mt-2 text-sm text-blue-600">Use Signature</button>
+              </div>
+            </div>
+            
+            <%# Type Signature Tab %>
+            <div x-show="activeTab === 'type'" class="mt-4">
+              <input x-model="typedSignature" 
+                     type="text" 
+                     placeholder="Type your name"
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <select x-model="signatureFont" class="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm">
+                <option value="'Dancing Script', cursive">Dancing Script</option>
+                <option value="'Great Vibes', cursive">Great Vibes</option>
+                <option value="'Allura', cursive">Allura</option>
+              </select>
+              <div x-show="typedSignature" class="mt-2 p-2 border border-gray-300 rounded bg-white">
+                <div x-text="typedSignature" 
+                     :style="`font-family: ${signatureFont}; font-size: 24px;`"
+                     class="text-center text-gray-800">
+                </div>
+              </div>
+              <button @click="useTypedSignature()" 
+                      x-show="typedSignature"
+                      class="mt-2 text-sm text-blue-600">
+                Use Signature
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <%# PDF Canvas Area %>
+      <div class="order-1 lg:order-2 lg:col-span-3">
+        <div class="bg-white rounded-lg shadow p-4">
+          <%# Loading State %>
+          <div x-show="loading" class="flex flex-col items-center justify-center h-96">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p class="text-gray-600">Loading PDF...</p>
+          </div>
+
+          <%# Error State %>
+          <div x-show="!loading && error" class="flex flex-col items-center justify-center h-96 text-center">
+            <svg class="w-12 h-12 text-red-400 mb-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">Error Loading PDF</h3>
+            <p class="text-gray-600 mb-4" x-text="errorMessage"></p>
+            <button @click="loadPDF()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+              Try Again
+            </button>
+          </div>
+          
+          <%# PDF Canvas %>
+          <div x-show="!loading && !error" class="text-center overflow-x-auto">
+            <div class="relative inline-block">
+              <%# Edit Controls Panel %>
+              <div x-show="showEditControls && selectedOverlay" 
+                   x-transition
+                   class="absolute z-20 bg-white shadow-lg rounded-md border border-gray-200 p-3 flex flex-col space-y-2"
+                   :style="`top: ${selectedOverlay ? (selectedOverlay.y - 70) : 0}px; left: ${selectedOverlay ? selectedOverlay.x : 0}px;`">
+                
+                <%# Text editing controls %>
+                <div x-show="selectedOverlay && selectedOverlay.type === 'text'" class="flex flex-col space-y-2">
+                  <input type="text" x-model="editingText" class="border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Edit text">
+                  <div class="flex space-x-2">
+                    <button @click="updateSelectedText()" class="bg-blue-600 text-white px-3 py-1 rounded text-xs">Update</button>
+                    <button @click="deleteSelected()" class="bg-red-600 text-white px-3 py-1 rounded text-xs">Delete</button>
+                    <button @click="cancelEdit()" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs">Cancel</button>
+                  </div>
+                </div>
+                
+                <%# Signature editing controls %>
+                <div x-show="selectedOverlay && selectedOverlay.type === 'signature'" class="flex space-x-2">
+                  <button @click="deleteSelected()" class="bg-red-600 text-white px-3 py-1 rounded text-xs">Delete</button>
+                  <button @click="cancelEdit()" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs">Cancel</button>
+                </div>
+              </div>
+              
+              <canvas x-ref="pdfCanvas" 
+                      @click="handleCanvasClick($event)"
+                      @touchstart="handleCanvasClick($event)"
+                      class="border border-gray-300 rounded-lg shadow-lg cursor-crosshair max-w-full h-auto">
+              </canvas>
+              
+              <%# Click indicators %>
+              <div x-show="currentMode === 'text' && textInput.trim()" 
+                   class="absolute top-2 left-2 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                Click to place text: "<span x-text="textInput"></span>"
+              </div>
+              
+              <div x-show="currentMode === 'signature' && currentSignatureData" 
+                   class="absolute top-2 left-2 bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
+                Click to place signature
+              </div>
+            </div>
+          </div>
+
+          <%# Messages %>
+          <div x-show="message" 
+               x-transition:enter="transition ease-out duration-300"
+               x-transition:enter-start="opacity-0 transform translate-y-2"
+               x-transition:enter-end="opacity-100 transform translate-y-0"
+               x-transition:leave="transition ease-in duration-200"
+               x-transition:leave-start="opacity-100 transform translate-y-0"
+               x-transition:leave-end="opacity-0 transform translate-y-2"
+               class="mt-4 p-3 rounded-md"
+               :class="messageType === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'">
+            <div class="flex">
+              <div class="flex-shrink-0">
+                <svg x-show="messageType === 'success'" class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                <svg x-show="messageType === 'error'" class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                </svg>
+              </div>
+              <div class="ml-3">
+                <p class="text-sm font-medium" x-text="message"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function pdfEditor() {
+  return {
+    // State variables
+    loading: true,
+    error: false,
+    errorMessage: '',
+    message: '',
+    messageType: 'success',
+    activeTab: 'draw',
+    textInput: '',
+    typedSignature: '',
+    signatureFont: "'Dancing Script', cursive",
+    currentMode: 'text',
+    hasChanges: false,
+    isDrawing: false,
+    uploadedSignature: null,
+    currentSignatureData: null,
+    pdfDoc: null,
+    scale: 1.5,
+    
+    // Edit controls state
+    showEditControls: false,
+    selectedOverlay: null,
+    editingText: '',
+    overlays: [],
+
+    init() {
+      this.loadPDF();
+      this.initSignatureCanvas();
+    },
+
+    async loadPDF() {
+      this.loading = true;
+      this.error = false;
+      this.errorMessage = '';
+      
+      try {
+        <% if @pdf_document.pdf_file.attached? %>
+          const pdfUrl = '<%= url_for(@pdf_document.pdf_file) %>';
+          console.log('Loading PDF from:', pdfUrl);
+          
+          // Fetch PDF as blob
+          const response = await fetch(pdfUrl);
+          const arrayBuffer = await response.arrayBuffer();
+          
+          // Load the PDF using global pdfjsLib
+          const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+          this.pdfDoc = pdf;
+          
+          // Render the first page
+          await this.renderPdfPage();
+          
+          this.loading = false;
+          this.showMessage('PDF loaded successfully!', 'success');
+        <% else %>
+          throw new Error('No PDF file attached');
+        <% end %>
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        this.loading = false;
+        this.error = true;
+        this.errorMessage = 'Failed to load PDF. Please try again.';
+      }
+    },
+    
+    async renderPdfPage() {
+      if (!this.pdfDoc) return;
+      
+      try {
+        const page = await this.pdfDoc.getPage(1);
+        const viewport = page.getViewport({ scale: this.scale });
+        
+        const canvas = this.$refs.pdfCanvas;
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        // Redraw any overlays
+        setTimeout(() => this.redrawOverlays(), 100);
+        
+        console.log('PDF page rendered successfully');
+      } catch (error) {
+        console.error('Error rendering PDF:', error);
+      }
+    },
+
+    showMessage(text, type = 'success') {
+      this.message = text;
+      this.messageType = type;
+      setTimeout(() => {
+        this.message = '';
+      }, 3000);
+    },
+
+    // Signature drawing functions
+    initSignatureCanvas() {
+      const canvas = this.$refs.signatureCanvas;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+      }
+    },
+
+    startDrawing(event) {
+      this.isDrawing = true;
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    },
+
+    draw(event) {
+      if (!this.isDrawing) return;
+      
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    },
+
+    stopDrawing() {
+      this.isDrawing = false;
+    },
+
+    clearSignature() {
+      const canvas = this.$refs.signatureCanvas;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    },
+
+    useDrawnSignature() {
+      this.currentSignatureData = this.$refs.signatureCanvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.uploadedSignature = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+
+    useUploadedSignature() {
+      this.currentSignatureData = this.uploadedSignature;
+      this.currentMode = 'signature';
+    },
+
+    useTypedSignature() {
+      // Create canvas to render typed signature
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      const textWidth = ctx.measureText(this.typedSignature).width;
+      
+      canvas.width = textWidth + 20;
+      canvas.height = 60;
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      ctx.fillStyle = 'black';
+      ctx.fillText(this.typedSignature, 10, 45);
+      
+      this.currentSignatureData = canvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    // Canvas interaction
+    handleCanvasClick(event) {
+      // Handle both click and touch events
+      const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+      const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+      
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      // Check if we clicked on an existing overlay
+      if (this.overlays && this.overlays.length > 0) {
+        // Deselect all first
+        let foundOverlay = false;
+        
+        for (let i = this.overlays.length - 1; i >= 0; i--) {
+          const overlay = this.overlays[i];
+          overlay.selected = false;
+          
+          // Check if click is within this overlay
+          if (!foundOverlay) {
+            if (overlay.type === 'text') {
+              const textWidth = this.$refs.pdfCanvas.getContext('2d').measureText(overlay.content).width;
+              if (canvasX >= overlay.x - 5 && 
+                  canvasX <= overlay.x + textWidth + 5 &&
+                  canvasY >= overlay.y - 20 && 
+                  canvasY <= overlay.y + 10) {
+                overlay.selected = true;
+                foundOverlay = true;
+                this.selectedOverlay = overlay;
+                this.editingText = overlay.content;
+                this.showEditControls = true;
+              }
+            } else if (overlay.type === 'signature') {
+              if (canvasX >= overlay.x - 5 && 
+                  canvasX <= overlay.x + overlay.width + 5 &&
+                  canvasY >= overlay.y - 35 && 
+                  canvasY <= overlay.y - 35 + overlay.height + 10) {
+                overlay.selected = true;
+                foundOverlay = true;
+                this.selectedOverlay = overlay;
+                this.showEditControls = true;
+              }
+            }
+          }
+        }
+        
+        if (foundOverlay) {
+          this.redrawOverlays();
+          return;
+        } else {
+          this.selectedOverlay = null;
+          this.showEditControls = false;
+        }
+      }
+      
+      // If no overlay was clicked, handle normal click
+      if (this.currentMode === 'text' && this.textInput.trim()) {
+        this.addTextAtPosition(clientX, clientY);
+      } else if (this.currentMode === 'signature' && this.currentSignatureData) {
+        this.addSignatureAtPosition(clientX, clientY);
+      }
+    },
+
+    async addTextAtPosition(clientX, clientY) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: canvasX / this.scale,
+            y: (this.$refs.pdfCanvas.height - canvasY) / this.scale,
+            text: this.textInput,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Text added successfully!', 'success');
+          
+          // Add text overlay to canvas immediately
+          this.addTextOverlay(canvasX, canvasY, this.textInput);
+          this.textInput = '';
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add text', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding text:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    async addSignatureAtPosition(clientX, clientY) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_signature`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: canvasX / this.scale,
+            y: (this.$refs.pdfCanvas.height - canvasY) / this.scale,
+            signature_data: this.currentSignatureData,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Signature added successfully!', 'success');
+          
+          // Add signature overlay to canvas immediately
+          this.addSignatureOverlay(canvasX, canvasY, this.currentSignatureData);
+          this.currentMode = 'text';
+          this.currentSignatureData = null;
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add signature', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding signature:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    addTextOverlay(canvasX, canvasY, text) {
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Generate unique ID for this overlay
+      const id = `text-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      // Draw directly at canvas coordinates
+      ctx.save();
+      ctx.fillStyle = '#000000'; // Black for normal text
+      ctx.font = '16px Arial';
+      ctx.fillText(text, canvasX, canvasY);
+      ctx.restore();
+      
+      // Store overlay for persistence
+      if (!this.overlays) this.overlays = [];
+      this.overlays.push({
+        id: id,
+        type: 'text',
+        x: canvasX,
+        y: canvasY,
+        content: text,
+        selected: false
+      });
+    },
+
+    addSignatureOverlay(canvasX, canvasY, signatureData) {
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Generate unique ID for this overlay
+      const id = `sig-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        // Draw directly at canvas coordinates
+        ctx.drawImage(img, canvasX, canvasY - 30, 100, 30);
+        
+        // Store overlay for persistence
+        if (!this.overlays) this.overlays = [];
+        this.overlays.push({
+          id: id,
+          type: 'signature',
+          x: canvasX,
+          y: canvasY,
+          content: signatureData,
+          selected: false,
+          width: 100,
+          height: 30
+        });
+      };
+      img.src = signatureData;
+    },
+    
+    async redrawOverlays() {
+      if (!this.overlays || !this.overlays.length) return;
+      
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Clear and redraw PDF first
+      await this.renderPdfPage();
+      
+      // Now draw all overlays
+      this.overlays.forEach(overlay => {
+        if (overlay.type === 'text') {
+          ctx.save();
+          
+          // Draw selection box if selected
+          if (overlay.selected) {
+            const textWidth = ctx.measureText(overlay.content).width;
+            ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+            ctx.fillRect(overlay.x - 5, overlay.y - 20, 
+                        textWidth + 10, 30);
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(overlay.x - 5, overlay.y - 20, 
+                          textWidth + 10, 30);
+          }
+          
+          // Draw text
+          ctx.fillStyle = '#000000';
+          ctx.font = '16px Arial';
+          ctx.fillText(overlay.content, overlay.x, overlay.y);
+          ctx.restore();
+        } else if (overlay.type === 'signature') {
+          const img = new Image();
+          img.onload = () => {
+            // Draw selection box if selected
+            if (overlay.selected) {
+              ctx.save();
+              ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+              ctx.fillRect(overlay.x - 5, overlay.y - 35, 
+                          overlay.width + 10, overlay.height + 10);
+              ctx.strokeStyle = '#007bff';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(overlay.x - 5, overlay.y - 35, 
+                            overlay.width + 10, overlay.height + 10);
+              ctx.restore();
+            }
+            
+            // Draw signature
+            ctx.drawImage(img, overlay.x, overlay.y - 30, overlay.width, overlay.height);
+          };
+          img.src = overlay.content;
+        }
+      });
+    },
+
+    updateSelectedText() {
+      if (!this.selectedOverlay || this.selectedOverlay.type !== 'text') return;
+      
+      // Update the overlay content
+      this.selectedOverlay.content = this.editingText;
+      this.hasChanges = true;
+      
+      // Reset edit state
+      this.showEditControls = false;
+      this.redrawOverlays();
+      this.showMessage('Text updated successfully!', 'success');
+    },
+    
+    deleteSelected() {
+      if (!this.selectedOverlay) return;
+      
+      // Remove from overlays array
+      const index = this.overlays.findIndex(o => o.id === this.selectedOverlay.id);
+      if (index !== -1) {
+        this.overlays.splice(index, 1);
+      }
+      
+      // Reset edit state
+      this.selectedOverlay = null;
+      this.showEditControls = false;
+      this.hasChanges = true;
+      this.redrawOverlays();
+      this.showMessage('Item deleted successfully!', 'success');
+    },
+    
+    cancelEdit() {
+      this.selectedOverlay = null;
+      this.showEditControls = false;
+      this.redrawOverlays();
+    },
+    
+    async savePdf() {
+      if (!this.hasChanges) return;
+      
+      try {
+        // For now, just mark as saved since we're already saving with each add
+        this.hasChanges = false;
+        this.showMessage('Changes saved successfully!', 'success');
+      } catch (error) {
+        console.error('Error saving PDF:', error);
+        this.showMessage('Failed to save changes', 'error');
+      }
+    },
+    
+    downloadPdf() {
+      window.location.href = `/pdf_documents/<%= @pdf_document.id %>/download`;
+    }
+  };
+}
+</script>

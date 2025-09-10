@@ -33,9 +33,13 @@ local:
 #   primary: local
 #   mirrors: [ amazon, google, microsoft ]
 
-# Supabase Storage configuration
+# Supabase Storage configuration (using S3-compatible API with fog-aws)
 supabase:
-  service: Supabase
-  url: <%= ENV["SUPABASE_URL"] %>
-  key: <%= ENV["SUPABASE_ANON_KEY"] %>
+  service: S3
+  endpoint: <%= ENV.fetch("SUPABASE_URL", "") + "/storage/v1" %>
+  access_key_id: <%= ENV["SUPABASE_ANON_KEY"] %>
+  secret_access_key: <%= ENV["SUPABASE_SERVICE_ROLE_KEY"] %>
+  region: auto
   bucket: pdfs
+  upload:
+    acl: private

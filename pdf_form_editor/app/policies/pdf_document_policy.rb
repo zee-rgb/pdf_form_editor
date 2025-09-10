@@ -33,6 +33,18 @@ class PdfDocumentPolicy < ApplicationPolicy
     show?
   end
 
+  def embed_view?
+    show?
+  end
+
+  def simple_edit?
+    update?
+  end
+
+  def basic_view?
+    update?
+  end
+
   class Scope < Scope
     def resolve
       if user.present?

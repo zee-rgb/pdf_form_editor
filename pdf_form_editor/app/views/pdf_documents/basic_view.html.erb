@@ -1,0 +1,82 @@
+<%# Super simplified PDF viewer template with minimal JavaScript %>
+<div class="p-4 bg-white rounded shadow">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold"><%= @pdf_document.title %></h1>
+    <div>
+      <%= link_to "Back to PDFs", pdf_documents_path, class: "text-blue-600" %>
+    </div>
+  </div>
+
+  <% if @pdf_document.pdf_file.attached? %>
+    <div class="border rounded p-4">
+      <div id="loading" class="text-center py-8">
+        Loading PDF...
+      </div>
+      <div id="error" style="display: none;" class="text-center text-red-600 py-8">
+        Error loading PDF
+      </div>
+      <div class="flex justify-center">
+        <canvas id="pdf-canvas" class="border shadow"></canvas>
+      </div>
+    </div>
+    
+    <div class="mt-4 flex justify-center">
+      <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "px-4 py-2 bg-blue-600 text-white rounded" %>
+    </div>
+
+    <script>
+      // Wait for everything to load
+      document.addEventListener('DOMContentLoaded', function() {
+        const url = '<%= url_for(@pdf_document.pdf_file) %>';
+        const canvas = document.getElementById('pdf-canvas');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        
+        // Load PDF.js directly
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+        script.onload = function() {
+          const pdfjsLib = window['pdfjs-dist/build/pdf'];
+          
+          // Set worker source
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+          
+          // Load PDF
+          const loadingTask = pdfjsLib.getDocument(url);
+          loadingTask.promise.then(function(pdf) {
+            // Get first page
+            return pdf.getPage(1).then(function(page) {
+              const scale = 1.5;
+              const viewport = page.getViewport({ scale: scale });
+              
+              // Set dimensions
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              
+              // Render PDF page
+              const renderContext = {
+                canvasContext: canvas.getContext('2d'),
+                viewport: viewport
+              };
+              
+              page.render(renderContext).promise.then(function() {
+                loading.style.display = 'none';
+                console.log('PDF rendered successfully');
+              });
+            });
+          }).catch(function(error) {
+            loading.style.display = 'none';
+            error.style.display = 'block';
+            console.error('Error loading PDF:', error);
+          });
+        };
+        
+        document.head.appendChild(script);
+      });
+    </script>
+  <% else %>
+    <div class="text-center py-8 bg-gray-100 rounded border">
+      No PDF file attached to this document.
+    </div>
+  <% end %>
+</div>

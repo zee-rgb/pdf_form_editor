@@ -130,6 +130,11 @@ vendor/cache/
 /config/settings/*.local.yml
 /config/environments/*.local.yml
 
+# Supabase credentials
+.env.supabase
+supabase/.env
+/config/supabase.yml
+
 # Ignore deployment files
 /config/deploy/*
 /config/deploy.rb
@@ -137,6 +142,12 @@ vendor/cache/
 /config/deploy/
 /shared/
 /releases/
+
+# Render specific
+.render-buildpacks.json
+/render.yaml.local
+/render.production.yaml
+.env.render
 
 # Ignore Docker files (future use)
 /.dockerignore
@@ -184,3 +195,14 @@ npm-debug.log*
 /tmp/cache/assets/
 /public/packs/
 /public/packs-test/
+
+# Rails 8 specific
+/tmp/solid_cache/
+/tmp/solid_queue/
+/tmp/storage/
+/tmp/active_storage/
+.solid_queue-data
+
+# Propshaft assets
+/app/assets/builds/propshaft-cache
+/app/assets/builds/propshaft-manifest.json

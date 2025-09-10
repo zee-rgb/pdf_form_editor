@@ -1,0 +1,502 @@
+<script>
+function pdfEditor() {
+  return {
+    // State variables
+    loading: true,
+    error: false,
+    errorMessage: '',
+    message: '',
+    messageType: 'success',
+    activeTab: 'draw',
+    textInput: '',
+    typedSignature: '',
+    signatureFont: "'Dancing Script', cursive",
+    currentMode: 'text',
+    hasChanges: false,
+    isDrawing: false,
+    uploadedSignature: null,
+    currentSignatureData: null,
+    pdfDoc: null,
+    scale: 1.5,
+    
+    // Edit controls state
+    showEditControls: false,
+    selectedOverlay: null,
+    editingText: '',
+    overlays: [],
+
+    init() {
+      this.loadPDF();
+      this.initSignatureCanvas();
+    },
+
+    async loadPDF() {
+      this.loading = true;
+      this.error = false;
+      this.errorMessage = '';
+      
+      try {
+        <% if @pdf_document.pdf_file.attached? %>
+          const pdfUrl = '<%= url_for(@pdf_document.pdf_file) %>';
+          console.log('Loading PDF from:', pdfUrl);
+          
+          // Make sure PDF.js is loaded
+          if (!window.pdfjsLib) {
+            console.error('PDF.js not loaded');
+            throw new Error('PDF.js library not loaded');
+          }
+          
+          // Set worker source
+          if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          }
+          
+          // Fetch PDF as blob
+          const response = await fetch(pdfUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          
+          // Load the PDF
+          const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+          const pdf = await loadingTask.promise;
+          this.pdfDoc = pdf;
+          
+          // Render the first page
+          await this.renderPdfPage();
+          
+          this.loading = false;
+          this.showMessage('PDF loaded successfully!', 'success');
+        <% else %>
+          throw new Error('No PDF file attached');
+        <% end %>
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        this.loading = false;
+        this.error = true;
+        this.errorMessage = 'Failed to load PDF. Please try again.';
+      }
+    },
+    
+    async renderPdfPage() {
+      if (!this.pdfDoc) return;
+      
+      try {
+        const page = await this.pdfDoc.getPage(1);
+        const viewport = page.getViewport({ scale: this.scale });
+        
+        const canvas = this.$refs.pdfCanvas;
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+        
+        // Redraw any overlays
+        setTimeout(() => this.redrawOverlays(), 100);
+        
+        console.log('PDF page rendered successfully');
+      } catch (error) {
+        console.error('Error rendering PDF:', error);
+      }
+    },
+
+    showMessage(text, type = 'success') {
+      this.message = text;
+      this.messageType = type;
+      setTimeout(() => {
+        this.message = '';
+      }, 3000);
+    },
+
+    // Signature drawing functions
+    initSignatureCanvas() {
+      const canvas = this.$refs.signatureCanvas;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+      }
+    },
+
+    startDrawing(event) {
+      this.isDrawing = true;
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+    },
+
+    draw(event) {
+      if (!this.isDrawing) return;
+      
+      const rect = this.$refs.signatureCanvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      const ctx = this.$refs.signatureCanvas.getContext('2d');
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    },
+
+    stopDrawing() {
+      this.isDrawing = false;
+    },
+
+    clearSignature() {
+      const canvas = this.$refs.signatureCanvas;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    },
+
+    useDrawnSignature() {
+      this.currentSignatureData = this.$refs.signatureCanvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.uploadedSignature = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    },
+
+    useUploadedSignature() {
+      this.currentSignatureData = this.uploadedSignature;
+      this.currentMode = 'signature';
+    },
+
+    useTypedSignature() {
+      // Create canvas to render typed signature
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      const textWidth = ctx.measureText(this.typedSignature).width;
+      
+      canvas.width = textWidth + 20;
+      canvas.height = 60;
+      
+      ctx.font = `40px ${this.signatureFont}`;
+      ctx.fillStyle = 'black';
+      ctx.fillText(this.typedSignature, 10, 45);
+      
+      this.currentSignatureData = canvas.toDataURL('image/png');
+      this.currentMode = 'signature';
+    },
+
+    // Canvas interaction
+    handleCanvasClick(event) {
+      // Handle both click and touch events
+      const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+      const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+      
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      // Check if we clicked on an existing overlay
+      if (this.overlays && this.overlays.length > 0) {
+        // Deselect all first
+        let foundOverlay = false;
+        
+        for (let i = this.overlays.length - 1; i >= 0; i--) {
+          const overlay = this.overlays[i];
+          overlay.selected = false;
+          
+          // Check if click is within this overlay
+          if (!foundOverlay) {
+            if (overlay.type === 'text') {
+              const textWidth = this.$refs.pdfCanvas.getContext('2d').measureText(overlay.content).width;
+              if (canvasX >= overlay.x - 5 && 
+                  canvasX <= overlay.x + textWidth + 5 &&
+                  canvasY >= overlay.y - 20 && 
+                  canvasY <= overlay.y + 10) {
+                overlay.selected = true;
+                foundOverlay = true;
+                this.selectedOverlay = overlay;
+                this.editingText = overlay.content;
+                this.showEditControls = true;
+              }
+            } else if (overlay.type === 'signature') {
+              if (canvasX >= overlay.x - 5 && 
+                  canvasX <= overlay.x + overlay.width + 5 &&
+                  canvasY >= overlay.y - 35 && 
+                  canvasY <= overlay.y - 35 + overlay.height + 10) {
+                overlay.selected = true;
+                foundOverlay = true;
+                this.selectedOverlay = overlay;
+                this.showEditControls = true;
+              }
+            }
+          }
+        }
+        
+        if (foundOverlay) {
+          this.redrawOverlays();
+          return;
+        } else {
+          this.selectedOverlay = null;
+          this.showEditControls = false;
+        }
+      }
+      
+      // If no overlay was clicked, handle normal click
+      if (this.currentMode === 'text' && this.textInput.trim()) {
+        this.addTextAtPosition(clientX, clientY);
+      } else if (this.currentMode === 'signature' && this.currentSignatureData) {
+        this.addSignatureAtPosition(clientX, clientY);
+      }
+    },
+
+    async addTextAtPosition(clientX, clientY) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: canvasX / this.scale,
+            y: (this.$refs.pdfCanvas.height - canvasY) / this.scale,
+            text: this.textInput,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Text added successfully!', 'success');
+          
+          // Add text overlay to canvas immediately
+          this.addTextOverlay(canvasX, canvasY, this.textInput);
+          this.textInput = '';
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add text', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding text:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    async addSignatureAtPosition(clientX, clientY) {
+      const rect = this.$refs.pdfCanvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
+      
+      try {
+        const response = await fetch(`/pdf_documents/<%= @pdf_document.id %>/add_signature`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': document.querySelector('[name="csrf-token"]').content
+          },
+          body: JSON.stringify({
+            x: canvasX / this.scale,
+            y: (this.$refs.pdfCanvas.height - canvasY) / this.scale,
+            signature_data: this.currentSignatureData,
+            page: 0
+          })
+        });
+
+        if (response.ok) {
+          this.hasChanges = true;
+          this.showMessage('Signature added successfully!', 'success');
+          
+          // Add signature overlay to canvas immediately
+          this.addSignatureOverlay(canvasX, canvasY, this.currentSignatureData);
+          this.currentMode = 'text';
+          this.currentSignatureData = null;
+        } else {
+          const errorData = await response.json();
+          this.showMessage(errorData.message || 'Failed to add signature', 'error');
+        }
+      } catch (error) {
+        console.error('Error adding signature:', error);
+        this.showMessage('Network error. Please try again.', 'error');
+      }
+    },
+
+    addTextOverlay(canvasX, canvasY, text) {
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Generate unique ID for this overlay
+      const id = `text-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      // Draw directly at canvas coordinates
+      ctx.save();
+      ctx.fillStyle = '#000000'; // Black for normal text
+      ctx.font = '16px Arial';
+      ctx.fillText(text, canvasX, canvasY);
+      ctx.restore();
+      
+      // Store overlay for persistence
+      if (!this.overlays) this.overlays = [];
+      this.overlays.push({
+        id: id,
+        type: 'text',
+        x: canvasX,
+        y: canvasY,
+        content: text,
+        selected: false
+      });
+    },
+
+    addSignatureOverlay(canvasX, canvasY, signatureData) {
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Generate unique ID for this overlay
+      const id = `sig-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        // Draw directly at canvas coordinates
+        ctx.drawImage(img, canvasX, canvasY - 30, 100, 30);
+        
+        // Store overlay for persistence
+        if (!this.overlays) this.overlays = [];
+        this.overlays.push({
+          id: id,
+          type: 'signature',
+          x: canvasX,
+          y: canvasY,
+          content: signatureData,
+          selected: false,
+          width: 100,
+          height: 30
+        });
+      };
+      img.src = signatureData;
+    },
+    
+    async redrawOverlays() {
+      if (!this.overlays || !this.overlays.length) return;
+      
+      const canvas = this.$refs.pdfCanvas;
+      const ctx = canvas.getContext('2d');
+      
+      // Clear and redraw PDF first
+      await this.renderPdfPage();
+      
+      // Now draw all overlays
+      this.overlays.forEach(overlay => {
+        if (overlay.type === 'text') {
+          ctx.save();
+          
+          // Draw selection box if selected
+          if (overlay.selected) {
+            const textWidth = ctx.measureText(overlay.content).width;
+            ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+            ctx.fillRect(overlay.x - 5, overlay.y - 20, 
+                        textWidth + 10, 30);
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(overlay.x - 5, overlay.y - 20, 
+                          textWidth + 10, 30);
+          }
+          
+          // Draw text
+          ctx.fillStyle = '#000000';
+          ctx.font = '16px Arial';
+          ctx.fillText(overlay.content, overlay.x, overlay.y);
+          ctx.restore();
+        } else if (overlay.type === 'signature') {
+          const img = new Image();
+          img.onload = () => {
+            // Draw selection box if selected
+            if (overlay.selected) {
+              ctx.save();
+              ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+              ctx.fillRect(overlay.x - 5, overlay.y - 35, 
+                          overlay.width + 10, overlay.height + 10);
+              ctx.strokeStyle = '#007bff';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(overlay.x - 5, overlay.y - 35, 
+                            overlay.width + 10, overlay.height + 10);
+              ctx.restore();
+            }
+            
+            // Draw signature
+            ctx.drawImage(img, overlay.x, overlay.y - 30, overlay.width, overlay.height);
+          };
+          img.src = overlay.content;
+        }
+      });
+    },
+
+    updateSelectedText() {
+      if (!this.selectedOverlay || this.selectedOverlay.type !== 'text') return;
+      
+      // Update the overlay content
+      this.selectedOverlay.content = this.editingText;
+      this.hasChanges = true;
+      
+      // Reset edit state
+      this.showEditControls = false;
+      this.redrawOverlays();
+      this.showMessage('Text updated successfully!', 'success');
+    },
+    
+    deleteSelected() {
+      if (!this.selectedOverlay) return;
+      
+      // Remove from overlays array
+      const index = this.overlays.findIndex(o => o.id === this.selectedOverlay.id);
+      if (index !== -1) {
+        this.overlays.splice(index, 1);
+      }
+      
+      // Reset edit state
+      this.selectedOverlay = null;
+      this.showEditControls = false;
+      this.hasChanges = true;
+      this.redrawOverlays();
+      this.showMessage('Item deleted successfully!', 'success');
+    },
+    
+    cancelEdit() {
+      this.selectedOverlay = null;
+      this.showEditControls = false;
+      this.redrawOverlays();
+    },
+    
+    async savePdf() {
+      if (!this.hasChanges) return;
+      
+      try {
+        // For now, just mark as saved since we're already saving with each add
+        this.hasChanges = false;
+        this.showMessage('Changes saved successfully!', 'success');
+      } catch (error) {
+        console.error('Error saving PDF:', error);
+        this.showMessage('Failed to save changes', 'error');
+      }
+    },
+    
+    downloadPdf() {
+      window.location.href = `/pdf_documents/<%= @pdf_document.id %>/download`;
+    }
+  };
+}
+</script>

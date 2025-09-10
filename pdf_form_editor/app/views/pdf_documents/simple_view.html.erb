@@ -1,0 +1,28 @@
+<%# Simple PDF viewer template without any complex JavaScript %>
+<div class="bg-white rounded-lg shadow p-4">
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold"><%= @pdf_document.title %></h1>
+    <div>
+      <%= link_to "Back to PDFs", pdf_documents_path, class: "text-blue-600 hover:text-blue-800" %>
+    </div>
+  </div>
+
+  <div class="border rounded-lg p-4 bg-gray-50">
+    <div id="pdf-loading" class="flex flex-col items-center justify-center py-12">
+      <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p class="text-gray-600">Loading PDF...</p>
+    </div>
+    
+    <div id="pdf-error" class="hidden bg-red-50 text-red-700 p-4 rounded-lg text-center">
+      Error loading PDF
+    </div>
+    
+    <div class="flex justify-center">
+      <canvas id="pdfCanvas" data-pdf-url="<%= url_for(@pdf_document.pdf_file) if @pdf_document.pdf_file.attached? %>" class="hidden"></canvas>
+    </div>
+  </div>
+
+  <div class="mt-4 flex justify-center">
+    <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg" %>
+  </div>
+</div>

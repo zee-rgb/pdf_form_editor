@@ -1,0 +1,121 @@
+<%# Header Section %>
+<div x-data="pdfEditor()" class="min-h-screen bg-gray-50" @click.away="showEditControls = false; selectedOverlay = null; redrawOverlays();">
+  <%# Top Bar - Simple and Responsive %>
+  <div class="bg-white shadow-sm p-4">
+    <div class="container mx-auto flex flex-wrap items-center justify-between">
+      <h1 class="text-xl font-semibold"><%= @pdf_document.title %></h1>
+      
+      <div class="flex flex-wrap items-center space-x-2 mt-2 sm:mt-0">
+        <button x-show="hasChanges" 
+                @click="savePdf()" 
+                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+          Save Changes
+        </button>
+        <button @click="downloadPdf()" 
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium">
+          Download PDF
+        </button>
+        <%= link_to "Back to PDFs", pdf_documents_path, class: "bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium" %>
+      </div>
+    </div>
+  </div>
+
+  <%# Main Content %>
+  <div class="container mx-auto px-4 py-6">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <%# Tools Sidebar %>
+      <div class="order-2 lg:order-1 lg:col-span-1">
+        <div class="bg-white rounded-lg shadow p-4 lg:sticky lg:top-6">
+          <h2 class="text-lg font-medium text-gray-900 mb-4">Tools</h2>
+          
+          <%# Text Tool %>
+          <div class="mb-6">
+            <label for="textInput" class="block text-sm font-medium text-gray-700 mb-2">Add Text</label>
+            <input x-model="textInput" 
+                   id="textInput"
+                   type="text" 
+                   placeholder="Enter text to add"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md">
+            <p class="mt-1 text-xs text-gray-500">Click on the PDF to place text</p>
+          </div>
+          
+          <%# Signature Tools %>
+          <div>
+            <h3 class="text-sm font-medium text-gray-700 mb-3">Add Signature</h3>
+            
+            <%# Signature Tabs %>
+            <div class="border-b border-gray-200">
+              <nav class="-mb-px flex space-x-6">
+                <button @click="activeTab = 'draw'" 
+                        :class="activeTab === 'draw' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Draw
+                </button>
+                <button @click="activeTab = 'upload'" 
+                        :class="activeTab === 'upload' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Upload
+                </button>
+                <button @click="activeTab = 'type'" 
+                        :class="activeTab === 'type' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500'"
+                        class="py-2 px-1 border-b-2 font-medium text-sm">
+                  Type
+                </button>
+              </nav>
+            </div>
+            
+            <%# Draw Signature Tab %>
+            <div x-show="activeTab === 'draw'" class="mt-4">
+              <canvas x-ref="signatureCanvas" 
+                      @mousedown="startDrawing($event)"
+                      @mousemove="draw($event)" 
+                      @mouseup="stopDrawing()"
+                      @mouseleave="stopDrawing()"
+                      width="280" 
+                      height="120" 
+                      class="border border-gray-300 rounded cursor-crosshair bg-white">
+              </canvas>
+              <div class="mt-2 flex justify-between">
+                <button @click="clearSignature()" class="text-sm text-gray-600">Clear</button>
+                <button @click="useDrawnSignature()" class="text-sm text-blue-600">Use Signature</button>
+              </div>
+            </div>
+            
+            <%# Upload Signature Tab %>
+            <div x-show="activeTab === 'upload'" class="mt-4">
+              <input type="file" 
+                     accept="image/*" 
+                     @change="handleImageUpload($event)"
+                     class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:bg-blue-50 file:text-blue-700">
+              <div x-show="uploadedSignature" class="mt-2">
+                <img x-bind:src="uploadedSignature" alt="Uploaded signature" class="max-w-full h-16 border border-gray-300 rounded">
+                <button @click="useUploadedSignature()" class="mt-2 text-sm text-blue-600">Use Signature</button>
+              </div>
+            </div>
+            
+            <%# Type Signature Tab %>
+            <div x-show="activeTab === 'type'" class="mt-4">
+              <input x-model="typedSignature" 
+                     type="text" 
+                     placeholder="Type your name"
+                     class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm">
+              <select x-model="signatureFont" class="w-full mt-2 px-3 py-2 border border-gray-300 rounded-md text-sm">
+                <option value="'Dancing Script', cursive">Dancing Script</option>
+                <option value="'Great Vibes', cursive">Great Vibes</option>
+                <option value="'Allura', cursive">Allura</option>
+              </select>
+              <div x-show="typedSignature" class="mt-2 p-2 border border-gray-300 rounded bg-white">
+                <div x-text="typedSignature" 
+                     :style="`font-family: ${signatureFont}; font-size: 24px;`"
+                     class="text-center text-gray-800">
+                </div>
+              </div>
+              <button @click="useTypedSignature()" 
+                      x-show="typedSignature"
+                      class="mt-2 text-sm text-blue-600">
+                Use Signature
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>

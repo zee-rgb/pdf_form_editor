@@ -1,231 +1,29 @@
-<div class="bg-white min-h-screen">
+<div class="bg-white min-h-screen p-4">
   <!-- Header -->
-  <div class="border-b bg-white px-4 py-3 flex items-center justify-between">
+  <div class="border-b bg-white px-4 py-3 mb-4 flex items-center justify-between">
     <div>
       <h1 class="text-xl font-semibold text-gray-900"><%= @pdf_document.title %></h1>
-      <p class="text-sm text-gray-500">Click on the PDF to add text • Use tools below to add signatures</p>
+      <p class="text-sm text-gray-500">View your PDF below</p>
     </div>
     <div class="flex items-center space-x-2">
       <%= link_to "Back to PDFs", pdf_documents_path, class: "px-3 py-2 text-sm text-gray-600 hover:text-gray-900" %>
+      <%= link_to "Edit PDF", edit_pdf_document_path(@pdf_document), class: "px-3 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700" %>
+      <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700" %>
     </div>
   </div>
 
-  <div class="flex h-screen">
-    <!-- Sidebar Tools -->
-    <div class="w-64 bg-gray-50 border-r p-4 overflow-y-auto">
-      <h2 class="text-lg font-medium text-gray-900 mb-4">Tools</h2>
-      
-      <!-- Add Text Tool -->
-      <div class="mb-6">
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Add Text</h3>
-        <input type="text" 
-               id="textInput" 
-               placeholder="Enter text to add" 
-               class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
-        <p class="text-xs text-gray-500 mt-1">Click on the PDF to place text</p>
-      </div>
-
-      <!-- Add Signature Tool -->
-      <div class="mb-6">
-        <h3 class="text-sm font-medium text-gray-700 mb-2">Add Signature</h3>
-        
-        <!-- Signature Tabs -->
-        <div class="flex border-b border-gray-200 mb-3">
-          <button class="tab-button px-3 py-2 text-sm font-medium text-indigo-600 border-b-2 border-indigo-600" data-tab="draw">Draw</button>
-          <button class="tab-button px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="upload">Upload</button>
-          <button class="tab-button px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700" data-tab="type">Type</button>
-        </div>
-
-        <!-- Draw Signature -->
-        <div id="draw-tab" class="tab-content">
-          <canvas id="signatureCanvas" 
-                  width="200" 
-                  height="100" 
-                  class="border border-gray-300 rounded bg-white mb-2 cursor-crosshair"></canvas>
-          <div class="flex space-x-2">
-            <button id="clearSignature" class="px-2 py-1 text-xs text-gray-600 border border-gray-300 rounded hover:bg-gray-50">Clear</button>
-            <button id="useSignature" class="px-2 py-1 text-xs text-white bg-indigo-600 rounded hover:bg-indigo-700">Use Signature</button>
-          </div>
-        </div>
-
-        <!-- Upload Signature -->
-        <div id="upload-tab" class="tab-content hidden">
-          <input type="file" 
-                 id="signatureUpload" 
-                 accept="image/*" 
-                 class="w-full text-sm text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100">
-        </div>
-
-        <!-- Type Signature -->
-        <div id="type-tab" class="tab-content hidden">
-          <input type="text" 
-                 id="typedSignature" 
-                 placeholder="Type your name" 
-                 class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 mb-2">
-          <select id="signatureFont" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500">
-            <option value="Dancing Script">Cursive</option>
-            <option value="Great Vibes">Elegant</option>
-            <option value="Allura">Flowing</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Save/Download Actions -->
-      <div class="border-t pt-4">
-        <button id="downloadPdf" class="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition duration-200">
-          Download PDF
-        </button>
-      </div>
-    </div>
-
-    <!-- PDF Viewer -->
-    <div class="flex-1 relative">
-      <div id="pdfError" class="hidden absolute inset-0 items-center justify-center bg-gray-50">
-        <div class="text-center">
-          <div class="text-red-500 mb-2">
-            <svg class="h-12 w-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
-            </svg>
-          </div>
-          <h3 class="text-lg font-medium text-gray-900 mb-1">Error Loading PDF</h3>
-          <p class="text-gray-500 mb-4">Failed to load PDF. Please check the file and try again.</p>
-          <button onclick="location.reload()" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
-            Try Again
-          </button>
-        </div>
-      </div>
-
-      <div id="pdfViewer" class="h-full overflow-auto bg-gray-100 p-4">
-        <canvas id="pdfCanvas" class="mx-auto shadow-lg bg-white"></canvas>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  // PDF.js setup
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  
-  const canvas = document.getElementById('pdfCanvas');
-  const ctx = canvas.getContext('2d');
-  const pdfError = document.getElementById('pdfError');
-  const pdfViewer = document.getElementById('pdfViewer');
-  
-  let pdfDoc = null;
-  let pageNum = 1;
-  let scale = 1.2;
-  
-  // Load PDF
   <% if @pdf_document.pdf_file.attached? %>
-    const pdfUrl = '<%= url_for(@pdf_document.pdf_file) %>';
-    console.log('Loading PDF from:', pdfUrl);
-    console.log('PDF attached:', true);
-    
-    // Fetch PDF as blob to avoid CORS issues
-    fetch(pdfUrl)
-      .then(response => response.arrayBuffer())
-      .then(data => {
-        return pdfjsLib.getDocument(data).promise;
-      })
-      .then(function(pdf) {
+    <div class="border rounded p-2 bg-white">
+      <embed 
+        src="<%= url_for(@pdf_document.pdf_file) %>" 
+        type="application/pdf"
+        width="100%" 
+        height="800px"
+        class="w-full">
+    </div>
   <% else %>
-    console.error('No PDF file attached');
-    pdfError.classList.remove('hidden');
-    pdfViewer.classList.add('hidden');
-    return;
+    <div class="p-4 bg-red-50 text-red-700 rounded border">
+      No PDF file is attached to this document.
+    </div>
   <% end %>
-    pdfDoc = pdf;
-    renderPage(pageNum);
-  }).catch(function(error) {
-    console.error('Error loading PDF:', error);
-    pdfError.classList.remove('hidden');
-    pdfViewer.classList.add('hidden');
-  });
-  
-  function renderPage(num) {
-    pdfDoc.getPage(num).then(function(page) {
-      const viewport = page.getViewport({ scale: scale });
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      
-      const renderContext = {
-        canvasContext: ctx,
-        viewport: viewport
-      };
-      
-      page.render(renderContext);
-    });
-  }
-  
-  // Tab switching
-  document.querySelectorAll('.tab-button').forEach(button => {
-    button.addEventListener('click', function() {
-      const tabName = this.dataset.tab;
-      
-      // Update active tab button
-      document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('text-indigo-600', 'border-indigo-600');
-        btn.classList.add('text-gray-500');
-      });
-      this.classList.add('text-indigo-600', 'border-indigo-600');
-      this.classList.remove('text-gray-500');
-      
-      // Show corresponding tab content
-      document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.add('hidden');
-      });
-      document.getElementById(tabName + '-tab').classList.remove('hidden');
-    });
-  });
-  
-  // Signature Canvas
-  const signatureCanvas = document.getElementById('signatureCanvas');
-  const signatureCtx = signatureCanvas.getContext('2d');
-  let isDrawing = false;
-  
-  signatureCanvas.addEventListener('mousedown', function(e) {
-    isDrawing = true;
-    signatureCtx.beginPath();
-    signatureCtx.moveTo(e.offsetX, e.offsetY);
-  });
-  
-  signatureCanvas.addEventListener('mousemove', function(e) {
-    if (isDrawing) {
-      signatureCtx.lineTo(e.offsetX, e.offsetY);
-      signatureCtx.stroke();
-    }
-  });
-  
-  signatureCanvas.addEventListener('mouseup', function() {
-    isDrawing = false;
-  });
-  
-  // Clear signature
-  document.getElementById('clearSignature').addEventListener('click', function() {
-    signatureCtx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
-  });
-  
-  // Text placement on PDF
-  canvas.addEventListener('click', function(e) {
-    const textInput = document.getElementById('textInput');
-    if (textInput.value.trim()) {
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      ctx.font = '16px Arial';
-      ctx.fillStyle = 'blue';
-      ctx.fillText(textInput.value, x, y);
-      
-      textInput.value = '';
-    }
-  });
-  
-  // Download functionality (placeholder)
-  document.getElementById('downloadPdf').addEventListener('click', function() {
-    alert('Download functionality will be implemented with server-side PDF processing');
-  });
-});
-</script>
+</div>

@@ -158,11 +158,32 @@ app/
 
 ## 🚢 Deployment
 
-### Render (Recommended)
+### Render with Supabase (Recommended)
+
+#### Supabase Setup
+
+1. Create a new Supabase project at [supabase.com](https://supabase.com/)
+2. Set up a PostgreSQL database (automatically created with your project)
+3. Create a storage bucket named `pdfs` for file storage
+4. Copy your Supabase URL and API keys from the project settings
+
+#### Render Setup
 
 1. Connect your GitHub repository to Render
-2. Set up a PostgreSQL database
-3. Configure environment variables
+2. Create a new Web Service with the following settings:
+   - **Environment**: Ruby
+   - **Build Command**: `./bin/render-build.sh`
+   - **Start Command**: `bundle exec puma -C config/puma.rb`
+   - **Health Check Path**: `/up`
+3. Configure environment variables:
+   - `DATABASE_URL`: Your Supabase PostgreSQL connection string
+   - `RAILS_MASTER_KEY`: Your Rails master key from `config/master.key`
+   - `SUPABASE_URL`: Your Supabase project URL
+   - `SUPABASE_ANON_KEY`: Your Supabase anon/public key
+   - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key
+   - `RAILS_ENV`: `production`
+   - `RAILS_SERVE_STATIC_FILES`: `true`
+   - `RAILS_LOG_TO_STDOUT`: `true`
 4. Deploy the web service
 
 ### Manual Deployment

@@ -6,10 +6,13 @@ Rails.application.routes.draw do
       post :add_text
       post :add_signature
       get :download
+      get :simple_edit
+      get :basic_view
+      get :embed_view
     end
   end
 
-  root "pdf_documents#index"
+  root "home#index"
 
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
