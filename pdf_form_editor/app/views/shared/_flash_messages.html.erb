@@ -1,0 +1,12 @@
+<%= turbo_frame_tag "status_messages" do %>
+  <% if notice %>
+    <div class="max-w-lg mx-auto mt-4 p-3 rounded bg-green-500 text-white">
+      <%= notice %>
+    </div>
+  <% end %>
+  <% if alert %>
+    <div class="max-w-lg mx-auto mt-4 p-3 rounded bg-red-500 text-white">
+      <%= alert %>
+    </div>
+  <% end %>
+<% end %>

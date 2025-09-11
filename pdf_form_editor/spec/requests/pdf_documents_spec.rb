@@ -102,9 +102,9 @@ RSpec.describe "PdfDocuments", type: :request do
       get overlay_edit_pdf_document_path(pdf_document)
 
       expect(response).to have_http_status(:success)
-      expect(response.body).to include("Add Text")
-      expect(response.body).to include("Place Text")
-      expect(response.body).to include("Signature")
+      expect(response.body).to include("Add Text") # Main heading still present
+      expect(response.body).to include("Text to add") # Updated label
+      expect(response.body).to include("Signature") # Still present
     end
 
     it "denies access to other users" do
@@ -121,18 +121,40 @@ RSpec.describe "PdfDocuments", type: :request do
       {
         x: 100.0,
         y: 200.0,
-        text: "Sample Text",
+        content: "Sample Text",
         page: 0
       }
     end
 
-    it "adds text to PDF" do
-      post add_text_pdf_document_path(pdf_document),
-           params: text_params
+    context "with JSON format" do
+      it "adds text to PDF" do
+        post add_text_pdf_document_path(pdf_document, format: :json),
+             params: text_params
 
-      expect(response).to have_http_status(:success)
-      json_response = JSON.parse(response.body)
-      expect(json_response["status"]).to eq("success")
+        expect(response).to have_http_status(:success)
+        json_response = JSON.parse(response.body)
+        expect(json_response["status"]).to eq("success")
+      end
+    end
+
+    context "with Turbo Stream format" do
+      it "adds text to PDF" do
+        post add_text_pdf_document_path(pdf_document, format: :turbo_stream),
+             params: text_params
+
+        expect(response).to have_http_status(:success)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      end
+    end
+
+    context "with HTML format" do
+      it "adds text to PDF and redirects" do
+        post add_text_pdf_document_path(pdf_document),
+             params: text_params
+
+        expect(response).to have_http_status(:redirect)
+        expect(response).to redirect_to(overlay_edit_pdf_document_path(pdf_document))
+      end
     end
 
     it "denies access to other users" do
@@ -155,13 +177,35 @@ RSpec.describe "PdfDocuments", type: :request do
       }
     end
 
-    it "adds signature to PDF" do
-      post add_signature_pdf_document_path(pdf_document),
-           params: signature_params
+    context "with JSON format" do
+      it "adds signature to PDF" do
+        post add_signature_pdf_document_path(pdf_document, format: :json),
+             params: signature_params
 
-      expect(response).to have_http_status(:success)
-      json_response = JSON.parse(response.body)
-      expect(json_response["status"]).to eq("success")
+        expect(response).to have_http_status(:success)
+        json_response = JSON.parse(response.body)
+        expect(json_response["status"]).to eq("success")
+      end
+    end
+
+    context "with Turbo Stream format" do
+      it "adds signature to PDF" do
+        post add_signature_pdf_document_path(pdf_document, format: :turbo_stream),
+             params: signature_params
+
+        expect(response).to have_http_status(:success)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      end
+    end
+
+    context "with HTML format" do
+      it "adds signature to PDF and redirects" do
+        post add_signature_pdf_document_path(pdf_document),
+             params: signature_params
+
+        expect(response).to have_http_status(:redirect)
+        expect(response).to redirect_to(overlay_edit_pdf_document_path(pdf_document))
+      end
     end
 
     it "denies access to other users" do

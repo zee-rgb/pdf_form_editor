@@ -200,6 +200,37 @@ class PdfDocument < ApplicationRecord
     raise e
   end
 
+  def add_text_element(x, y, content)
+    elements = overlay_elements || []
+    elements << {
+      'type' => 'text',
+      'x' => x,
+      'y' => y,
+      'content' => content,
+      'created_at' => Time.current
+    }
+    update!(overlay_elements: elements)
+  end
+
+  def add_signature_element(x, y, content, font = "Dancing Script")
+    elements = overlay_elements || []
+    elements << {
+      'type' => 'signature',
+      'x' => x,
+      'y' => y,
+      'content' => content,
+      'font' => font,
+      'created_at' => Time.current
+    }
+    update!(overlay_elements: elements)
+  end
+
+  def remove_element(index)
+    elements = overlay_elements || []
+    elements.delete_at(index) if index >= 0 && index < elements.length
+    update!(overlay_elements: elements)
+  end
+
   private
 
   # Convert UI coordinates to PDF points
@@ -215,24 +246,21 @@ class PdfDocument < ApplicationRecord
     xf = x.to_f
     yf = y.to_f
 
-    Rails.logger.info "Input coordinates: (#{xf}, #{yf}), PDF dimensions: #{width}x#{height}"
-
     if xf <= 1 && yf <= 1
       # 0..1 ratios
       x_pt = width * xf
       y_pt = height * (1.0 - yf)
     elsif xf <= 100 && yf <= 100
-      # 0..100 percentages from top-left origin (web) to bottom-left origin (PDF)
+      # 0..100 percentages - convert from web top-left to PDF bottom-left
       x_pt = width * (xf / 100.0)
-      # Convert from top-left origin to bottom-left origin
-      y_pt = height * (1.0 - (yf / 100.0))
+      y_pt = height * (1.0 - (yf / 100.0)) # Invert Y for PDF coordinate system
     else
       # Assume already in points/pixels from top-left, convert Y
       x_pt = xf
       y_pt = height - yf
     end
 
-    Rails.logger.info "Converted coordinates: (#{x_pt}, #{y_pt})"
+    Rails.logger.info "Coordinates: (#{xf}, #{yf}) -> (#{x_pt.round(1)}, #{y_pt.round(1)})"
     [ x_pt, y_pt ]
   end
 end

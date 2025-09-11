@@ -3,4 +3,11 @@
  *= require_self
  */
 
-@import "tailwindcss";
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}

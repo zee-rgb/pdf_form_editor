@@ -6,6 +6,7 @@ Rails.application.routes.draw do
       post :add_text
       post :add_signature
       post :add_multiple_elements
+      delete :remove_element
       get :download
       get :stream
       get :simple_edit

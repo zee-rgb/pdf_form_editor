@@ -50,10 +50,10 @@
     <% full_width = content_for?(:full_width) %>
     <main class="<%= full_width ? 'w-full' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8' %> py-6">
       <% if notice %>
-        <div class="alert alert-success mb-4"><%= notice %></div>
+        <div class="alert alert-success mb-4 animate-fade-out" style="animation: fadeOut 0.5s ease-out 3s forwards;"><%= notice %></div>
       <% end %>
       <% if alert %>
-        <div class="alert alert-error mb-4"><%= alert %></div>
+        <div class="alert alert-error mb-4 animate-fade-out" style="animation: fadeOut 0.5s ease-out 3s forwards;"><%= alert %></div>
       <% end %>
 
       <%= yield %>
