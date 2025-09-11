@@ -78,7 +78,7 @@ RSpec.describe "PdfDocuments", type: :request do
 
       expect(response).to have_http_status(:redirect)
       pdf_document = PdfDocument.last
-      expect(response).to redirect_to(pdf_document)
+      expect(response).to redirect_to(overlay_edit_pdf_document_path(pdf_document, format: :html))
     end
 
     it "associates document with current user" do
@@ -92,17 +92,19 @@ RSpec.describe "PdfDocuments", type: :request do
   describe "GET /pdf_documents/:id/edit" do
     let(:pdf_document) { create(:pdf_document, user: user) }
 
-    it "returns http success for owner" do
+    it "redirects to overlay editor for owner" do
       get edit_pdf_document_path(pdf_document)
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(:redirect)
+      expect(response).to redirect_to(overlay_edit_pdf_document_path(pdf_document))
     end
 
-    it "includes PDF editor interface" do
-      get edit_pdf_document_path(pdf_document)
+    it "includes PDF editor interface in overlay edit" do
+      get overlay_edit_pdf_document_path(pdf_document)
 
-      expect(response.body).to include("pdfEditor()")
+      expect(response).to have_http_status(:success)
       expect(response.body).to include("Add Text")
-      expect(response.body).to include("Add Signature")
+      expect(response.body).to include("Place Text")
+      expect(response.body).to include("Signature")
     end
 
     it "denies access to other users" do
@@ -189,12 +191,13 @@ RSpec.describe "PdfDocuments", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
-    it "redirects when no processed PDF exists" do
+    it "downloads original PDF when no processed PDF exists" do
       pdf_without_processed = create(:pdf_document, user: user)
 
       get download_pdf_document_path(pdf_without_processed)
 
-      expect(response).to have_http_status(:redirect)
+      expect(response).to have_http_status(:success)
+      expect(response.content_type).to eq("application/pdf")
     end
   end
 

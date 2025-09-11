@@ -29,7 +29,15 @@ class PdfDocumentPolicy < ApplicationPolicy
     update?
   end
 
+  def add_multiple_elements?
+    update?
+  end
+
   def download?
+    show?
+  end
+
+  def stream?
     show?
   end
 
@@ -42,6 +50,10 @@ class PdfDocumentPolicy < ApplicationPolicy
   end
 
   def basic_view?
+    update?
+  end
+
+  def overlay_edit?
     update?
   end
 

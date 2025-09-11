@@ -135,47 +135,13 @@
                   <%= time_ago_in_words(pdf_document.created_at) %> ago
                 </p>
                 <div class="flex space-x-2">
-                  <%= link_to "Edit", edit_pdf_document_path(pdf_document), class: "text-blue-600 hover:text-blue-900 text-sm font-medium" %>
+                  <%= link_to "Edit", overlay_edit_pdf_document_path(pdf_document), class: "btn btn-sm btn-primary" %>
                   <% if pdf_document.processed_pdf.attached? %>
-                    <%= link_to "Download", download_pdf_document_path(pdf_document), class: "text-green-600 hover:text-green-900 text-sm font-medium" %>
+                    <%= link_to "Download", download_pdf_document_path(pdf_document), class: "btn btn-sm btn-success" %>
                   <% end %>
-                  <div x-data="{ open: false }">
-                    <button @click="open = true" class="text-red-600 hover:text-red-900 text-sm font-medium">
-                      Delete
-                    </button>
-                    
-                    <!-- Modal -->
-                    <div x-show="open" style="display: none" @keydown.escape.prevent.stop="open = false"
-                         role="dialog" aria-modal="true" class="fixed inset-0 z-50 overflow-y-auto">
-                      <!-- Overlay -->
-                      <div x-show="open" x-transition.opacity class="fixed inset-0 bg-black/50"></div>
-                      
-                      <!-- Panel -->
-                      <div x-show="open" x-transition @click="open = false"
-                           class="relative flex min-h-screen items-center justify-center p-4">
-                        <div @click.stop class="relative min-w-96 max-w-xl rounded-xl bg-white p-6 shadow-lg">
-                          <h2 class="font-medium text-gray-800">Delete PDF</h2>
-                          <p class="mt-2 text-gray-500">
-                            Are you sure you want to delete "<span class="font-medium"><%= pdf_document.title %></span>"? This action cannot be undone.
-                          </p>
-                          
-                          <div class="mt-6 flex justify-end space-x-2">
-                            <button @click="open = false" 
-                                    class="px-4 py-2 text-gray-800 hover:bg-gray-100 rounded-lg">
-                              Cancel
-                            </button>
-                            <form method="POST" action="<%= pdf_document_path(pdf_document) %>" class="inline">
-                              <%= hidden_field_tag :authenticity_token, form_authenticity_token %>
-                              <%= hidden_field_tag :_method, "DELETE" %>
-                              <button type="submit" class="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg">
-                                Delete
-                              </button>
-                            </form>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <%= button_to "Delete", pdf_document_path(pdf_document), method: :delete,
+                        form: { data: { turbo_confirm: "Are you sure you want to delete '#{pdf_document.title}'?" } },
+                        class: "btn btn-sm btn-error text-white" %>
                 </div>
               </div>
             </div>

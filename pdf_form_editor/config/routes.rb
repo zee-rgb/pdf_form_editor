@@ -5,10 +5,13 @@ Rails.application.routes.draw do
     member do
       post :add_text
       post :add_signature
+      post :add_multiple_elements
       get :download
+      get :stream
       get :simple_edit
       get :basic_view
       get :embed_view
+      get :overlay_edit
     end
   end
 

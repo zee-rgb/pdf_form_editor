@@ -9,7 +9,7 @@
         </div>
       </div>
       <div class="mt-5 md:mt-0 md:col-span-2">
-        <%= form_with model: @pdf_document, local: true, multipart: true, class: "shadow sm:rounded-md sm:overflow-hidden" do |form| %>
+        <%= form_with model: @pdf_document, local: true, multipart: true, data: { turbo: false }, class: "shadow sm:rounded-md sm:overflow-hidden" do |form| %>
           <div class="px-4 py-5 bg-white space-y-6 sm:p-6">
             <% if @pdf_document.errors.any? %>
               <div class="rounded-md bg-red-50 p-4">
@@ -37,7 +37,7 @@
 
             <div>
               <%= form.label :title, class: "block text-sm font-medium text-gray-700" %>
-              <%= form.text_field :title, 
+              <%= form.text_field :title,
                   placeholder: "Enter a name for this document",
                   class: "mt-1 focus:ring-blue-500 focus:border-blue-500 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" %>
             </div>
@@ -55,7 +55,7 @@
                   <div class="flex text-sm text-gray-600" x-show="!fileSelected">
                     <label for="pdf_document_pdf_file" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
                       <span>Upload a PDF file</span>
-                      <%= form.file_field :pdf_file, accept: ".pdf", class: "sr-only", 
+                      <%= form.file_field :pdf_file, accept: ".pdf", class: "sr-only",
                           "x-ref": "fileInput",
                           "@change": "fileName = $event.target.files[0]?.name || ''; fileSelected = !!$event.target.files[0]; if($event.target.files[0]) previewPDF($event.target.files[0])" %>
                     </label>
@@ -63,7 +63,7 @@
                   </div>
                   <div x-show="fileSelected" class="text-sm font-medium text-green-600">
                     <p x-text="'✓ Selected: ' + fileName"></p>
-                    <button type="button" @click="fileName = ''; fileSelected = false; $refs.fileInput.value = ''" 
+                    <button type="button" @click="fileName = ''; fileSelected = false; $refs.fileInput.value = ''"
                             class="mt-1 text-xs text-gray-500 hover:text-gray-700">Change file</button>
                   </div>
                   <p class="text-xs text-gray-500">
@@ -71,7 +71,7 @@
                   </p>
                 </div>
               </div>
-              
+
               <!-- PDF Preview -->
               <div x-show="fileSelected" class="mt-4">
                 <h4 class="text-sm font-medium text-gray-700 mb-2">Preview:</h4>
@@ -100,54 +100,86 @@
   </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  
-  function previewPDF(file) {
+  // Load PDF.js dynamically to avoid conflicts
+  function loadPDFJSForPreview() {
+    return new Promise((resolve, reject) => {
+      if (window.pdfjsLib && typeof window.pdfjsLib.getDocument === 'function') {
+        resolve(window.pdfjsLib);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/pdfjs-dist@3.9.179/build/pdf.min.js';
+      script.onload = () => {
+        if (window.pdfjsLib) {
+          window.pdfjsLib.GlobalWorkerOptions = {
+            workerSrc: 'https://unpkg.com/pdfjs-dist@3.9.179/build/pdf.worker.min.js'
+          };
+          resolve(window.pdfjsLib);
+        } else {
+          reject(new Error('PDF.js failed to load'));
+        }
+      };
+      script.onerror = () => reject(new Error('Failed to load PDF.js script'));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function previewPDF(file) {
     if (!file || file.type !== 'application/pdf') return;
-    
+
     const canvas = document.getElementById('preview-canvas');
     const ctx = canvas.getContext('2d');
     const errorDiv = document.getElementById('preview-error');
     const loadingDiv = document.getElementById('preview-loading');
-    
+
     // Show loading, hide others
     loadingDiv.classList.remove('hidden');
     canvas.classList.add('hidden');
     errorDiv.classList.add('hidden');
-    
-    const fileReader = new FileReader();
-    fileReader.onload = function(e) {
-      const typedarray = new Uint8Array(e.target.result);
-      
-      pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
-        return pdf.getPage(1);
-      }).then(function(page) {
-        const viewport = page.getViewport({ scale: 0.5 });
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-        
-        const renderContext = {
-          canvasContext: ctx,
-          viewport: viewport
-        };
-        
-        return page.render(renderContext).promise;
-      }).then(function() {
-        // Success - show canvas, hide loading
-        loadingDiv.classList.add('hidden');
-        canvas.classList.remove('hidden');
-        errorDiv.classList.add('hidden');
-      }).catch(function(error) {
-        console.error('Error loading PDF preview:', error);
-        // Error - show error, hide loading
-        loadingDiv.classList.add('hidden');
-        canvas.classList.add('hidden');
-        errorDiv.classList.remove('hidden');
-      });
-    };
-    
-    fileReader.readAsArrayBuffer(file);
+
+    try {
+      // Load PDF.js if not already loaded
+      const pdfjsLib = await loadPDFJSForPreview();
+
+      const fileReader = new FileReader();
+      fileReader.onload = function(e) {
+        const typedarray = new Uint8Array(e.target.result);
+
+        pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+          return pdf.getPage(1);
+        }).then(function(page) {
+          const viewport = page.getViewport({ scale: 0.5 });
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+
+          const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+          };
+
+          return page.render(renderContext).promise;
+        }).then(function() {
+          // Success - show canvas, hide loading
+          loadingDiv.classList.add('hidden');
+          canvas.classList.remove('hidden');
+          errorDiv.classList.add('hidden');
+        }).catch(function(error) {
+          console.error('Error loading PDF preview:', error);
+          // Error - show error, hide loading
+          loadingDiv.classList.add('hidden');
+          canvas.classList.add('hidden');
+          errorDiv.classList.remove('hidden');
+        });
+      };
+
+      fileReader.readAsArrayBuffer(file);
+    } catch (error) {
+      console.error('Error loading PDF.js for preview:', error);
+      loadingDiv.classList.add('hidden');
+      canvas.classList.add('hidden');
+      errorDiv.classList.remove('hidden');
+    }
   }
 </script>

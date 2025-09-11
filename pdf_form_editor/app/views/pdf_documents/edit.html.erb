@@ -1,268 +1,263 @@
-<div class="min-h-screen bg-gray-50">
-  <%# Top navigation bar %>
-  <div class="bg-white shadow-sm p-4">
-    <div class="max-w-7xl mx-auto flex items-center justify-between">
-      <h1 class="text-xl font-semibold"><%= @pdf_document.title %></h1>
-      <div class="flex items-center space-x-3">
-        <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium" %>
-        <%= link_to "Back to PDFs", pdf_documents_path, class: "bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-md text-sm font-medium" %>
-      </div>
+<%# Simple PDF Editor %>
+<div class="flex min-h-screen bg-gray-100">
+  <%# Tools Sidebar %>
+  <div class="w-80 bg-white border-r shadow-sm p-6">
+    <h2 class="text-lg font-bold mb-6"><%= @pdf_document.title %></h2>
+    
+    <%# Text Tool %>
+    <div class="mb-8">
+      <h3 class="font-medium mb-3">Add Text</h3>
+      <input type="text" id="text-input" placeholder="Enter text" class="w-full p-2 border rounded mb-2">
+      <button id="text-mode" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
+        Click PDF to Add Text
+      </button>
+    </div>
+    
+    <%# Signature Tool %>
+    <div class="mb-8">
+      <h3 class="font-medium mb-3">Add Signature</h3>
+      <button id="draw-mode" class="w-full bg-green-600 text-white p-2 rounded mb-2 hover:bg-green-700">
+        Draw Signature
+      </button>
+      <input type="text" id="typed-sig" placeholder="Type name" class="w-full p-2 border rounded mb-2">
+      <button id="type-mode" class="w-full bg-purple-600 text-white p-2 rounded hover:bg-purple-700">
+        Click PDF to Add Typed Signature
+      </button>
+    </div>
+    
+    <%# Actions %>
+    <div class="space-y-2">
+      <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), 
+          class: "block w-full bg-gray-600 text-white p-2 rounded text-center hover:bg-gray-700" %>
+      <%= link_to "Back to PDFs", pdf_documents_path, 
+          class: "block w-full bg-gray-400 text-white p-2 rounded text-center hover:bg-gray-500" %>
+    </div>
+    
+    <%# Status %>
+    <div id="status" class="mt-4 p-2 rounded hidden"></div>
+  </div>
+  
+  <%# PDF Viewer %>
+  <div class="flex-1 p-4">
+    <div id="pdf-container" class="bg-white rounded shadow-lg h-full relative">
+      <% if @pdf_document.pdf_file.attached? %>
+        <iframe src="<%= url_for(@pdf_document.pdf_file) %>" 
+                title="PDF Document Viewer"
+                class="w-full h-full border-0"></iframe>
+        <div id="click-overlay" class="absolute inset-0 hidden cursor-crosshair bg-blue-500 bg-opacity-10"></div>
+      <% else %>
+        <div class="flex items-center justify-center h-full text-gray-500">
+          No PDF attached
+        </div>
+      <% end %>
     </div>
   </div>
-
-  <%# Main layout with PDF preview and tools %>
-  <div class="max-w-7xl mx-auto px-4 py-6">
-    <%# Success message when text is added %>
-    <div id="success-message" class="hidden bg-green-50 border-l-4 border-green-400 p-4 mb-4">
-      <div class="flex">
-        <div class="flex-shrink-0">
-          <svg class="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-          </svg>
-        </div>
-        <div class="ml-3">
-          <p class="text-sm text-green-700" id="success-text"></p>
-        </div>
-      </div>
-    </div>
-
-    <div class="flex flex-col md:flex-row gap-6">
-      <%# Tools sidebar %>
-      <div class="w-full md:w-1/4 lg:w-1/5">
-        <div class="bg-white rounded-lg shadow p-4 sticky top-4">
-          <h2 class="text-lg font-medium text-gray-900 mb-4">Tools</h2>
-          
-          <%# Text tool with click-to-add instructions %>
-          <div class="mb-6">
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Add Text</h3>
-            <input 
-              id="text-input" 
-              type="text" 
-              placeholder="Enter text to add"
-              class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm mb-2"
-            >
-            <div id="text-instructions" class="text-xs text-blue-600 p-2 bg-blue-50 rounded border border-blue-100 mb-3 hidden">
-              <p><strong>Click anywhere on the PDF</strong> to place your text</p>
-            </div>
-            <button 
-              id="activate-text-tool" 
-              class="w-full bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-sm font-medium">
-              Click to Place Text
-            </button>
-          </div>
-
-          <%# Signature tool %>
-          <div class="mb-6">
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Add Signature</h3>
-            <div class="bg-gray-50 border rounded p-3 text-center">
-              <canvas id="signature-pad" width="220" height="80" class="border mb-2 bg-white w-full"></canvas>
-              <div class="flex gap-2">
-                <button id="clear-signature" class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 px-3 py-1 rounded text-xs">
-                  Clear
-                </button>
-                <button id="use-signature" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs">
-                  Use Signature
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <%# PDF display area - full page, clickable %>
-      <div class="w-full md:w-3/4 lg:w-4/5">
-        <div class="bg-white rounded-lg shadow overflow-hidden" id="pdf-container">
-          <% if @pdf_document.pdf_file.attached? %>
-            <%# The PDF object tag makes the PDF clickable for interactive editing %>
-            <div id="pdf-wrapper" class="relative">
-              <object
-                id="pdf-object"
-                data="<%= url_for(@pdf_document.pdf_file) %>"
-                type="application/pdf"
-                width="100%"
-                height="800"
-                class="border-0">
-                <p>Your browser does not support PDFs. <a href="<%= url_for(@pdf_document.pdf_file) %>">Download</a> instead.</p>
-              </object>
-              <div id="pdf-overlay" class="absolute inset-0 cursor-crosshair opacity-0"></div>
-            </div>
-          <% else %>
-            <div class="flex items-center justify-center h-96 bg-gray-100">
-              <div class="text-center p-6">
-                <svg class="h-12 w-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-                <p class="text-gray-500">No PDF file is attached to this document.</p>
-              </div>
-            </div>
-          <% end %>
-        </div>
+  
+  <%# Draw Signature Modal %>
+  <div id="signature-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-lg">
+      <h3 class="text-lg font-bold mb-4">Draw Your Signature</h3>
+      <canvas id="signature-canvas" width="400" height="150" class="border mb-4 bg-white"></canvas>
+      <div class="flex gap-2">
+        <button id="clear-canvas" class="px-4 py-2 bg-gray-300 rounded">Clear</button>
+        <button id="cancel-signature" class="px-4 py-2 bg-red-500 text-white rounded">Cancel</button>
+        <button id="use-signature" class="px-4 py-2 bg-green-600 text-white rounded">Use Signature</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-  // Wait for everything to load
-  document.addEventListener('DOMContentLoaded', function() {
-    // Elements
-    const textInput = document.getElementById('text-input');
-    const activateTextTool = document.getElementById('activate-text-tool');
-    const textInstructions = document.getElementById('text-instructions');
-    const pdfOverlay = document.getElementById('pdf-overlay');
-    const successMessage = document.getElementById('success-message');
-    const successText = document.getElementById('success-text');
-    
-    // Signature pad
-    const canvas = document.getElementById('signature-pad');
-    const clearBtn = document.getElementById('clear-signature');
-    const useBtn = document.getElementById('use-signature');
-    let signaturePad = null;
-    
-    if (canvas && canvas.getContext) {
-      signaturePad = new SignaturePad(canvas);
-      
-      // Clear button
-      clearBtn.addEventListener('click', function() {
-        signaturePad.clear();
-      });
-      
-      // Use signature button
-      useBtn.addEventListener('click', function() {
-        if (signaturePad.isEmpty()) {
-          alert('Please provide a signature first.');
-        } else {
-          const signatureData = signaturePad.toDataURL();
-          // Here you would add code to use the signature
-          showSuccess('Signature ready! Click on PDF to place it.');
-        }
-      });
+document.addEventListener('DOMContentLoaded', function() {
+  const textInput = document.getElementById('text-input');
+  const textMode = document.getElementById('text-mode');
+  const drawMode = document.getElementById('draw-mode');
+  const typeMode = document.getElementById('type-mode');
+  const typedSig = document.getElementById('typed-sig');
+  const clickOverlay = document.getElementById('click-overlay');
+  const signatureModal = document.getElementById('signature-modal');
+  const signatureCanvas = document.getElementById('signature-canvas');
+  const status = document.getElementById('status');
+  
+  let currentMode = null;
+  let isDrawing = false;
+  let ctx = signatureCanvas?.getContext('2d');
+  
+  if (ctx) {
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+  }
+  
+  // Text mode
+  textMode.addEventListener('click', function() {
+    if (!textInput.value.trim()) {
+      alert('Enter text first');
+      return;
     }
-    
-    // Text placement tool
-    if (activateTextTool && textInput && pdfOverlay) {
-      activateTextTool.addEventListener('click', function() {
-        if (!textInput.value.trim()) {
-          alert('Please enter some text first.');
-          return;
-        }
-        
-        // Show instructions and make overlay active
-        textInstructions.classList.remove('hidden');
-        pdfOverlay.style.opacity = '0.2';
-        pdfOverlay.style.zIndex = '10';
-        
-        // Set up click handler
-        pdfOverlay.onclick = function(e) {
-          const rect = pdfOverlay.getBoundingClientRect();
-          const x = e.clientX - rect.left;
-          const y = e.clientY - rect.top;
-          
-          // Send text to server with coordinates
-          const data = {
-            text: textInput.value,
-            x: x,
-            y: y,
-            page: 1
-          };
-          
-          fetch('<%= add_text_pdf_document_path(@pdf_document) %>', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
-            },
-            body: JSON.stringify(data)
-          })
-          .then(response => response.json())
-          .then(data => {
-            // Reset the UI
-            pdfOverlay.style.opacity = '0';
-            pdfOverlay.style.zIndex = '0';
-            textInstructions.classList.add('hidden');
-            pdfOverlay.onclick = null;
-            
-            // Show success message
-            showSuccess('Text added successfully!');
-          })
-          .catch(error => {
-            console.error('Error:', error);
-            alert('There was an error adding the text. Please try again.');
-          });
-        };
-      });
+    currentMode = 'text';
+    clickOverlay.classList.remove('hidden');
+    showStatus('Click on PDF to place text', 'blue');
+  });
+  
+  // Draw signature mode
+  drawMode.addEventListener('click', function() {
+    signatureModal.classList.remove('hidden');
+    clearCanvas();
+  });
+  
+  // Type signature mode
+  typeMode.addEventListener('click', function() {
+    if (!typedSig.value.trim()) {
+      alert('Enter name first');
+      return;
     }
+    currentMode = 'type-signature';
+    clickOverlay.classList.remove('hidden');
+    showStatus('Click on PDF to place typed signature', 'purple');
+  });
+  
+  // Canvas drawing
+  if (signatureCanvas) {
+    signatureCanvas.addEventListener('mousedown', startDrawing);
+    signatureCanvas.addEventListener('mousemove', draw);
+    signatureCanvas.addEventListener('mouseup', stopDrawing);
+  }
+  
+  function startDrawing(e) {
+    isDrawing = true;
+    const rect = signatureCanvas.getBoundingClientRect();
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  }
+  
+  function draw(e) {
+    if (!isDrawing) return;
+    const rect = signatureCanvas.getBoundingClientRect();
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  }
+  
+  function stopDrawing() {
+    isDrawing = false;
+  }
+  
+  function clearCanvas() {
+    ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+  }
+  
+  // Modal controls
+  document.getElementById('clear-canvas')?.addEventListener('click', clearCanvas);
+  document.getElementById('cancel-signature')?.addEventListener('click', function() {
+    signatureModal.classList.add('hidden');
+  });
+  document.getElementById('use-signature')?.addEventListener('click', function() {
+    signatureModal.classList.add('hidden');
+    currentMode = 'draw-signature';
+    clickOverlay.classList.remove('hidden');
+    showStatus('Click on PDF to place signature', 'green');
+  });
+  
+  // PDF click handler
+  clickOverlay.addEventListener('click', function(e) {
+    const rect = clickOverlay.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     
-    function showSuccess(message) {
-      successText.textContent = message;
-      successMessage.classList.remove('hidden');
-      setTimeout(() => {
-        successMessage.classList.add('hidden');
-      }, 3000);
+    if (currentMode === 'text') {
+      addText(x, y, textInput.value);
+    } else if (currentMode === 'type-signature') {
+      addTypedSignature(x, y, typedSig.value);
+    } else if (currentMode === 'draw-signature') {
+      addDrawnSignature(x, y);
     }
   });
+  
+  function addText(x, y, text) {
+    fetch('<%= add_text_pdf_document_path(@pdf_document) %>', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ x: x, y: y, text: text, page: 0 })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showStatus('Text added! Download to see changes.', 'green');
+        textInput.value = '';
+        resetMode();
+      } else {
+        showStatus('Error: ' + data.message, 'red');
+      }
+    });
+  }
+  
+  function addTypedSignature(x, y, name) {
+    // Create typed signature canvas
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = 300;
+    tempCanvas.height = 80;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.font = 'italic 24px cursive';
+    tempCtx.fillText(name, 10, 50);
+    
+    const signatureData = tempCanvas.toDataURL();
+    
+    fetch('<%= add_signature_pdf_document_path(@pdf_document) %>', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ x: x, y: y, signature_data: signatureData, page: 0 })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showStatus('Signature added! Download to see changes.', 'green');
+        typedSig.value = '';
+        resetMode();
+      } else {
+        showStatus('Error: ' + data.message, 'red');
+      }
+    });
+  }
+  
+  function addDrawnSignature(x, y) {
+    const signatureData = signatureCanvas.toDataURL();
+    
+    fetch('<%= add_signature_pdf_document_path(@pdf_document) %>', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ x: x, y: y, signature_data: signatureData, page: 0 })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.status === 'success') {
+        showStatus('Signature added! Download to see changes.', 'green');
+        resetMode();
+      } else {
+        showStatus('Error: ' + data.message, 'red');
+      }
+    });
+  }
+  
+  function resetMode() {
+    currentMode = null;
+    clickOverlay.classList.add('hidden');
+  }
+  
+  function showStatus(message, color) {
+    status.textContent = message;
+    status.className = `mt-4 p-2 rounded text-white bg-${color}-500`;
+    status.classList.remove('hidden');
+    setTimeout(() => status.classList.add('hidden'), 3000);
+  }
+});
 </script>
 
-<script>
-  // Simple SignaturePad implementation
-  class SignaturePad {
-    constructor(canvas) {
-      this.canvas = canvas;
-      this.ctx = canvas.getContext('2d');
-      this.ctx.strokeStyle = '#000';
-      this.ctx.lineWidth = 2;
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
-      this.drawing = false;
-      
-      this._setupEvents();
-    }
-    
-    _setupEvents() {
-      this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
-      this.canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
-      document.addEventListener('mouseup', () => this._onMouseUp());
-    }
-    
-    _onMouseDown(event) {
-      this.drawing = true;
-      const rect = this.canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, y);
-    }
-    
-    _onMouseMove(event) {
-      if (!this.drawing) return;
-      
-      const rect = this.canvas.getBoundingClientRect();
-      const x = event.clientX - rect.left;
-      const y = event.clientY - rect.top;
-      
-      this.ctx.lineTo(x, y);
-      this.ctx.stroke();
-    }
-    
-    _onMouseUp() {
-      this.drawing = false;
-    }
-    
-    clear() {
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    }
-    
-    isEmpty() {
-      const data = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] !== 0) return false;
-      }
-      return true;
-    }
-    
-    toDataURL() {
-      return this.canvas.toDataURL('image/png');
-    }
-  }
-</script>

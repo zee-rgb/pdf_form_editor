@@ -1,0 +1,781 @@
+<%# PDF Editor with HTML Overlay Approach %>
+<% content_for :full_width, true %>
+<div class="min-h-screen bg-gray-900">
+  <%# Top toolbar (tools + actions) %>
+  <div class="bg-white border-b p-4 flex items-center gap-3 sticky top-0 z-50">
+    <div class="flex items-center gap-3 flex-1 min-w-0 overflow-hidden">
+      <h1 class="text-xl font-bold truncate"><%= @pdf_document.title %></h1>
+    </div>
+    <div class="flex gap-3 shrink-0 ml-auto whitespace-nowrap">
+      <button id="save-changes" class="btn btn-success text-white">Save Changes</button>
+      <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "btn btn-primary text-white" %>
+      <%= link_to "← Back to PDFs", pdf_documents_path, class: "btn" %>
+    </div>
+  </div>
+
+  <%# Two-column editor layout: left tools, right viewer %>
+  <div class="flex w-full">
+    <%# Left tools sidebar %>
+    <aside class="w-80 shrink-0 bg-white border-r p-4 space-y-4">
+      <div>
+        <label for="text-content" class="block text-sm font-semibold mb-1">Add Text</label>
+        <input type="text" id="text-content" placeholder="Type text…" class="input input-bordered w-full mb-2" />
+        <button id="add-text-mode" class="btn btn-primary w-full">Place Text</button>
+      </div>
+      <div>
+        <label for="signature-type" class="block text-sm font-semibold mb-1">Signature</label>
+        <select id="signature-type" class="select select-bordered select-sm w-full mb-2">
+          <option value="typed">Typed</option>
+          <option value="draw">Draw</option>
+          <option value="upload">Upload</option>
+        </select>
+        <div id="signature-typed-controls" class="space-y-2">
+          <input type="text" id="signature-name" placeholder="Type your name…" class="input input-bordered w-full" />
+          <select id="signature-font" class="select select-bordered select-sm w-full">
+            <option>Dancing Script</option>
+            <option>Great Vibes</option>
+            <option>Allura</option>
+          </select>
+        </div>
+        <div id="signature-draw-controls" class="hidden space-y-2">
+          <canvas id="draw-canvas" width="300" height="100" class="border rounded bg-white w-full"></canvas>
+          <div class="flex gap-2">
+            <button id="draw-clear" class="btn btn-sm w-1/2">Clear</button>
+            <button id="draw-use" class="btn btn-sm btn-primary w-1/2">Use</button>
+          </div>
+        </div>
+        <div id="signature-upload-controls" class="hidden space-y-2">
+          <input id="upload-input" type="file" accept="image/*" class="file-input file-input-bordered file-input-sm w-full" />
+        </div>
+        <img id="signature-preview" alt="preview" class="h-10 hidden" />
+        <button id="add-signature-mode" class="btn w-full mt-2">Place Signature</button>
+      </div>
+    </aside>
+
+    <%# Right: PDF viewer %>
+    <div class="flex-1 min-w-0">
+      <%# PDF viewer with zoom controls %>
+      <div id="pdf-viewer" class="w-full pt-0" style="height: calc(100vh - 96px);">
+        <% if @pdf_document.pdf_file.attached? %>
+          <%# Zoom controls toolbar %>
+          <div class="bg-white border-b p-2 flex items-center justify-center gap-2">
+            <button id="zoom-out" class="btn btn-sm btn-outline">-</button>
+            <span id="zoom-level" class="text-sm font-medium min-w-[60px] text-center">100%</span>
+            <button id="zoom-in" class="btn btn-sm btn-outline">+</button>
+            <div class="divider divider-horizontal"></div>
+            <button id="zoom-fit" class="btn btn-sm btn-outline">Fit</button>
+            <button id="zoom-actual" class="btn btn-sm btn-outline">100%</button>
+          </div>
+
+          <div id="pdf-stage" class="w-full h-full overflow-auto flex justify-center items-start bg-gray-100" style="height: calc(100% - 48px);">
+            <div id="loading-indicator" class="flex items-center justify-center h-full">
+              <div class="text-center">
+                <div class="loading loading-spinner loading-lg text-blue-600 mb-4"></div>
+                <p class="text-gray-600">Loading PDF...</p>
+              </div>
+            </div>
+            <div id="page-wrapper" class="relative hidden">
+              <canvas id="pdf-canvas"></canvas>
+              <div id="overlay-container" class="absolute inset-0 z-40"></div>
+            </div>
+          </div>
+        <% else %>
+          <div class="flex items-center justify-center h-full text-gray-800 text-xl">
+            No PDF file attached
+          </div>
+        <% end %>
+      </div>
+    </div>
+  </div>
+
+
+</div>
+
+<!-- Toasts (status messages) -->
+<div id="toast-container" class="fixed top-20 right-4 z-50 space-y-2"></div>
+
+<script>
+// Load PDF.js dynamically and reliably
+function loadPDFJS() {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib && typeof window.pdfjsLib.getDocument === 'function') {
+      // Configure worker if not already configured
+      if (!window.pdfjsLib.GlobalWorkerOptions || !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        window.pdfjsLib.GlobalWorkerOptions = window.pdfjsLib.GlobalWorkerOptions || {};
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.9.179/build/pdf.worker.min.js';
+      }
+      resolve(window.pdfjsLib);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/pdfjs-dist@3.9.179/build/pdf.min.js';
+    script.onload = () => {
+      // Wait a bit for the library to fully initialize
+      setTimeout(() => {
+        if (window.pdfjsLib && typeof window.pdfjsLib.getDocument === 'function') {
+          // Configure worker properly
+          window.pdfjsLib.GlobalWorkerOptions = window.pdfjsLib.GlobalWorkerOptions || {};
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.9.179/build/pdf.worker.min.js';
+          resolve(window.pdfjsLib);
+        } else {
+          reject(new Error('PDF.js failed to initialize properly'));
+        }
+      }, 100);
+    };
+    script.onerror = () => reject(new Error('Failed to load PDF.js script'));
+    document.head.appendChild(script);
+  });
+}
+
+(function() {
+  // Prevent multiple initializations
+  let isInitialized = false;
+  let initializationInProgress = false;
+
+  async function initEditor() {
+    if (isInitialized || initializationInProgress) {
+      console.log('Editor already initialized or initialization in progress');
+      return;
+    }
+
+    initializationInProgress = true;
+
+    const overlayContainer = document.getElementById('overlay-container');
+    const pdfCanvas = document.getElementById('pdf-canvas');
+    const pageWrapper = document.getElementById('page-wrapper');
+    const pdfStage = document.getElementById('pdf-stage');
+
+    if (!overlayContainer || !pdfCanvas || !pageWrapper || !pdfStage) {
+      console.error('Required PDF editor elements not found');
+      initializationInProgress = false;
+      return;
+    }
+
+    isInitialized = true;
+
+    // Load PDF.js first
+    try {
+      await loadPDFJS();
+      console.log('PDF.js loaded successfully');
+    } catch (error) {
+      console.error('Failed to load PDF.js:', error);
+      showFallbackPdfViewer();
+      return;
+    }
+
+    const textContent = document.getElementById('text-content');
+    const signatureType = document.getElementById('signature-type');
+    const signatureName = document.getElementById('signature-name');
+    const signatureFont = document.getElementById('signature-font');
+    const signaturePreview = document.getElementById('signature-preview');
+    const drawCanvas = document.getElementById('draw-canvas');
+    const drawClear = document.getElementById('draw-clear');
+    const drawUse = document.getElementById('draw-use');
+    const uploadInput = document.getElementById('upload-input');
+    const addTextMode = document.getElementById('add-text-mode');
+    const addSignatureMode = document.getElementById('add-signature-mode');
+    const typedControls = document.getElementById('signature-typed-controls');
+    const drawControls = document.getElementById('signature-draw-controls');
+    const uploadControls = document.getElementById('signature-upload-controls');
+    const toastContainer = document.getElementById('toast-container');
+    const saveChanges = document.getElementById('save-changes');
+
+    let currentMode = null; // 'text' | 'signature' | null
+    let overlayElements = [];
+    let signatureData = null; // dataURL for the signature image (typed/draw/upload)
+    let pdfDoc = null;
+    let currentScale = 1;
+    let minScale = 0.25;
+    let maxScale = 3.0;
+    let scaleStep = 0.25;
+
+    // PDF-specific state management
+    const PDF_ID = '<%= @pdf_document.id %>';
+    const PDF_TITLE = '<%= @pdf_document.title %>';
+
+    // Clear any previous state for this PDF
+    function clearPdfState() {
+      overlayElements = [];
+      signatureData = null;
+      currentMode = null;
+      if (overlayContainer) {
+        overlayContainer.innerHTML = '';
+      }
+    }
+
+    // Initialize PDF-specific state
+    clearPdfState();
+
+    // --- PDF.js loading ---
+    const basePdfUrl = '<%= stream_pdf_document_path(@pdf_document) %>';
+    const origPdfUrl = '<%= url_for(@pdf_document.pdf_file) %>';
+    let pdfUrl = basePdfUrl;
+
+    function initPdfViewer() {
+      console.log('Loading PDF ID: <%= @pdf_document.id %>, Title: <%= @pdf_document.title %>');
+      console.log('Stream URL:', pdfUrl);
+      console.log('Fallback URL:', origPdfUrl);
+
+      window.pdfjsLib.getDocument(pdfUrl).promise.then(function(pdf) {
+        pdfDoc = pdf;
+        hideLoadingIndicator();
+        renderPage(1);
+        showStatus('PDF loaded: <%= @pdf_document.title %> (ID: <%= @pdf_document.id %>)', 'success');
+      }).catch(function(err){
+        console.error('PDF load error (stream):', err);
+        console.log('Trying fallback URL...');
+        // Fallback to direct blob URL
+        window.pdfjsLib.getDocument(origPdfUrl).promise.then(function(pdf){
+          pdfDoc = pdf;
+          hideLoadingIndicator();
+          renderPage(1);
+          showStatus('PDF loaded (fallback): <%= @pdf_document.title %> (ID: <%= @pdf_document.id %>)', 'success');
+        }).catch(function(e2){
+          console.error('PDF load error (fallback):', e2);
+          hideLoadingIndicator();
+          showFallbackPdfViewer();
+        });
+      });
+    }
+
+    function hideLoadingIndicator() {
+      const loadingIndicator = document.getElementById('loading-indicator');
+      const pageWrapper = document.getElementById('page-wrapper');
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (pageWrapper) pageWrapper.classList.remove('hidden');
+    }
+
+    function showLoadingIndicator() {
+      const loadingIndicator = document.getElementById('loading-indicator');
+      const pageWrapper = document.getElementById('page-wrapper');
+      if (loadingIndicator) loadingIndicator.style.display = 'flex';
+      if (pageWrapper) pageWrapper.classList.add('hidden');
+    }
+
+    function showFallbackPdfViewer() {
+      hideLoadingIndicator();
+      showStatus('Using simple PDF viewer (overlays disabled)', 'info');
+      const container = document.getElementById('pdf-stage');
+      container.innerHTML = `
+        <div class="flex items-center justify-center h-full">
+          <div class="text-center">
+            <p class="text-gray-600 mb-4">PDF viewer is not available. Please use the download button to view your PDF.</p>
+            <a href="${origPdfUrl}" target="_blank" class="btn btn-primary">Open PDF in New Tab</a>
+          </div>
+        </div>
+      `;
+    }
+
+    // Start loading PDF after PDF.js is loaded
+    initPdfViewer();
+
+    function fitScaleForWidth(page) {
+      const view = page.getViewport({ scale: 1 });
+      const maxWidth = (pdfStage?.clientWidth || window.innerWidth) - 32; // some padding
+      return Math.max(minScale, Math.min(maxScale, maxWidth / view.width));
+    }
+
+    function renderPage(num, scale = null) {
+      if (!pdfDoc) return;
+      pdfDoc.getPage(num).then(function(page) {
+        if (scale !== null) {
+          currentScale = Math.max(minScale, Math.min(maxScale, scale));
+        } else if (currentScale === 1) {
+          currentScale = fitScaleForWidth(page);
+        }
+
+        const viewport = page.getViewport({ scale: currentScale });
+        const context = pdfCanvas.getContext('2d');
+        pdfCanvas.width = viewport.width;
+        pdfCanvas.height = viewport.height;
+        pageWrapper.style.width = viewport.width + 'px';
+        pageWrapper.style.height = viewport.height + 'px';
+        overlayContainer.style.width = '100%';
+        overlayContainer.style.height = '100%';
+        page.render({ canvasContext: context, viewport: viewport });
+
+        // Update zoom level display
+        updateZoomDisplay();
+      });
+    }
+
+    function reloadPdf() {
+      if (!window.pdfjsLib) {
+        showStatus('PDF.js not available for reload', 'error');
+        return;
+      }
+
+      showLoadingIndicator();
+
+      // Clear current PDF state
+      pdfDoc = null;
+
+      // Bust cache to fetch the latest processed PDF
+      const reloadUrl = basePdfUrl + '?t=' + Date.now();
+      console.log('Reloading PDF with URL:', reloadUrl);
+
+      window.pdfjsLib.getDocument(reloadUrl).promise.then(function(pdf) {
+        pdfDoc = pdf;
+        hideLoadingIndicator();
+        renderPage(1);
+        showStatus('PDF reloaded with latest changes', 'success');
+      }).catch(function(err) {
+        console.error('PDF reload error:', err);
+        // Try fallback URL
+        const fallbackUrl = origPdfUrl + '?t=' + Date.now();
+        console.log('Trying fallback URL:', fallbackUrl);
+        window.pdfjsLib.getDocument(fallbackUrl).promise.then(function(pdf) {
+          pdfDoc = pdf;
+          hideLoadingIndicator();
+          renderPage(1);
+          showStatus('PDF reloaded (fallback)', 'success');
+        }).catch(function(e2) {
+          console.error('PDF reload fallback error:', e2);
+          hideLoadingIndicator();
+          showStatus('Failed to reload PDF', 'error');
+        });
+      });
+    }
+
+    // Re-render on resize
+    window.addEventListener('resize', function() { renderPage(1); });
+
+    // Zoom control functions
+    function updateZoomDisplay() {
+      const zoomLevel = document.getElementById('zoom-level');
+      if (zoomLevel) {
+        zoomLevel.textContent = Math.round(currentScale * 100) + '%';
+      }
+    }
+
+    function zoomIn() {
+      const newScale = currentScale + scaleStep;
+      if (newScale <= maxScale) {
+        renderPage(1, newScale);
+      }
+    }
+
+    function zoomOut() {
+      const newScale = currentScale - scaleStep;
+      if (newScale >= minScale) {
+        renderPage(1, newScale);
+      }
+    }
+
+    function zoomFit() {
+      if (!pdfDoc) return;
+      pdfDoc.getPage(1).then(function(page) {
+        currentScale = fitScaleForWidth(page);
+        renderPage(1, currentScale);
+      });
+    }
+
+    function zoomActual() {
+      renderPage(1, 1.0);
+    }
+
+    // Zoom control event listeners
+    const zoomInBtn = document.getElementById('zoom-in');
+    const zoomOutBtn = document.getElementById('zoom-out');
+    const zoomFitBtn = document.getElementById('zoom-fit');
+    const zoomActualBtn = document.getElementById('zoom-actual');
+
+    if (zoomInBtn) zoomInBtn.addEventListener('click', zoomIn);
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', zoomOut);
+    if (zoomFitBtn) zoomFitBtn.addEventListener('click', zoomFit);
+    if (zoomActualBtn) zoomActualBtn.addEventListener('click', zoomActual);
+
+    // Keyboard shortcuts for zoom
+    document.addEventListener('keydown', function(e) {
+      if (e.ctrlKey || e.metaKey) {
+        switch(e.key) {
+          case '=':
+          case '+':
+            e.preventDefault();
+            zoomIn();
+            break;
+          case '-':
+            e.preventDefault();
+            zoomOut();
+            break;
+          case '0':
+            e.preventDefault();
+            zoomActual();
+            break;
+        }
+      }
+    });
+
+    // Enable one-shot text placement
+    addTextMode.addEventListener('click', function() {
+      currentMode = 'text';
+      addTextMode.classList.add('btn-active');
+      showStatus('Click anywhere on the PDF to place a text box', 'info');
+      overlayContainer.classList.add('cursor-crosshair');
+      addSignatureMode.classList.remove('btn-active');
+    });
+
+    // Enable one-shot signature placement
+    addSignatureMode.addEventListener('click', function() {
+      if (!signatureData) {
+        // If typed is selected, auto-generate from name
+        if (signatureType.value === 'typed') {
+          updateTypedSignaturePreview();
+        }
+      }
+      if (!signatureData) { showStatus('Create or choose a signature first', 'error'); return; }
+      currentMode = 'signature';
+      addSignatureMode.classList.add('btn-active');
+      showStatus('Click anywhere on the PDF to place a signature', 'info');
+      overlayContainer.classList.add('cursor-crosshair');
+      addTextMode.classList.remove('btn-active');
+    });
+
+    // Click handler for overlay container (always available)
+    overlayContainer.addEventListener('click', function(e) {
+      if (e.target.closest('.overlay-item')) { return; }
+      const rect = overlayContainer.getBoundingClientRect();
+      // Calculate coordinates as percentages (0-100) - these are relative to the overlay container
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      console.log('Click coordinates calculated:', {
+        x, y,
+        clientX: e.clientX, clientY: e.clientY,
+        rectLeft: rect.left, rectTop: rect.top,
+        rectWidth: rect.width, rectHeight: rect.height,
+        currentScale: currentScale
+      });
+      if (currentMode === 'signature') {
+        if (!signatureData) { showStatus('Create or choose a signature first', 'error'); return; }
+        addSignatureBox(x, y, signatureData);
+        currentMode = null;
+        addSignatureMode.classList.remove('btn-active');
+        overlayContainer.classList.remove('cursor-crosshair');
+        return;
+      }
+      if (currentMode === 'text') {
+        const content = textContent.value.trim() || 'Text';
+        addTextBox(x, y, content);
+        textContent.value = '';
+        currentMode = null;
+        addTextMode.classList.remove('btn-active');
+        overlayContainer.classList.remove('cursor-crosshair');
+      }
+    });
+
+  function addTextBox(x, y, text) {
+    const textBox = document.createElement('div');
+    textBox.className = 'overlay-item absolute bg-transparent border border-transparent hover:border-dashed hover:border-gray-400/60 px-2 py-1 rounded cursor-move pointer-events-auto backdrop-blur-sm';
+    textBox.style.left = x + '%';
+    textBox.style.top = y + '%';
+    textBox.style.minWidth = '150px';
+    textBox.innerHTML = `
+      <div class="font-medium text-gray-900">${escapeHtml(text)}</div>
+      <button onclick="removeElement(this.parentElement)"
+              class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs hover:bg-red-600">×</button>
+    `;
+
+    overlayContainer.appendChild(textBox);
+    const record = {type: 'text', element: textBox, content: text, x: x, y: y};
+    overlayElements.push(record);
+    makeDraggable(textBox, record);
+    showStatus('Text added! Click Save Changes when ready.', 'success');
+  }
+
+  function addSignatureBox(x, y, dataUrl) {
+    const sigBox = document.createElement('div');
+    sigBox.className = 'overlay-item absolute p-1 rounded cursor-move pointer-events-auto bg-transparent';
+    sigBox.style.left = x + '%';
+    sigBox.style.top = y + '%';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.style.maxWidth = '240px';
+    img.style.height = 'auto';
+    img.className = 'pointer-events-none';
+    const close = document.createElement('button');
+    close.textContent = '×';
+    close.className = 'absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs hover:bg-red-600';
+    close.setAttribute('onclick', 'removeElement(this.parentElement)');
+    sigBox.appendChild(img);
+    sigBox.appendChild(close);
+
+    overlayContainer.appendChild(sigBox);
+
+    // For typed signatures, include the actual text content
+    let content = null;
+    if (signatureType.value === 'typed') {
+      content = signatureName.value.trim();
+    }
+
+    const record = {type: 'signature', element: sigBox, signatureData: dataUrl, content: content, x: x, y: y};
+    overlayElements.push(record);
+    makeDraggable(sigBox, record);
+    showStatus('Signature added! Click Save Changes when ready.', 'success');
+  }
+
+  // Save changes (sequential to avoid race conditions)
+  let isSaving = false;
+
+  saveChanges.addEventListener('click', async function() {
+    if (isSaving) {
+      showStatus('Save already in progress...', 'info');
+      return;
+    }
+
+    if (overlayElements.length === 0) {
+      showStatus('No changes to save!', 'error');
+      return;
+    }
+
+    isSaving = true;
+    showStatus('Saving changes...', 'info');
+    saveChanges.classList.add('loading');
+    saveChanges.setAttribute('disabled', 'disabled');
+
+    // Prepare all elements for batch save
+    const elementsToSave = overlayElements.map(element => ({
+      type: element.type,
+      x: element.x,
+      y: element.y,
+      content: element.content,
+      signature_data: element.signatureData,
+      page: 0
+    }));
+
+    console.log('Elements being saved:', elementsToSave);
+
+    try {
+      const saveUrl = '/pdf_documents/' + PDF_ID + '/add_multiple_elements';
+      console.log('Sending batch save request:', elementsToSave);
+
+      const res = await fetch(saveUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: JSON.stringify({
+          elements: elementsToSave
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log('Batch save response:', data);
+
+      if (data.status === 'success') {
+        console.log('✓ All elements saved to PDF ID:', data.pdf_id, 'Message:', data.message);
+        showStatus('All changes saved! You can now download the updated PDF.', 'success');
+        // Clear the overlay elements after successful save
+        overlayElements.forEach(e => e.element.remove());
+        overlayElements = [];
+        // Reload PDF to show changes
+        setTimeout(() => {
+          reloadPdf();
+        }, 1000);
+      } else {
+        console.error('Save failed with response:', data);
+        throw new Error(data.message || 'Unknown error');
+      }
+    } catch (e) {
+      console.error('Batch save error:', e);
+      showStatus('Failed to save changes. Please try again.', 'error');
+    }
+
+    saveChanges.classList.remove('loading');
+    saveChanges.removeAttribute('disabled');
+    isSaving = false;
+  });
+
+    function resetMode() { currentMode = null; addTextMode.classList.remove('btn-active'); addSignatureMode.classList.remove('btn-active'); overlayContainer.classList.remove('cursor-crosshair'); }
+
+    function showStatus(message, type) {
+      const colors = {
+        'success': 'alert alert-success shadow',
+        'error': 'alert alert-error shadow',
+        'info': 'alert shadow'
+      };
+      const item = document.createElement('div');
+      item.className = colors[type] || 'alert';
+      item.textContent = message;
+      toastContainer.appendChild(item);
+
+      // Auto-remove after appropriate time
+      const duration = type === 'error' ? 5000 : 3500;
+      setTimeout(() => {
+        if (item.parentNode) {
+          item.remove();
+        }
+      }, duration);
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ----- Signature control logic -----
+    function showSignatureControlsForType() {
+      typedControls.classList.toggle('hidden', signatureType.value !== 'typed');
+      drawControls.classList.toggle('hidden', signatureType.value !== 'draw');
+      uploadControls.classList.toggle('hidden', signatureType.value !== 'upload');
+      if (signatureType.value === 'typed') {
+        updateTypedSignaturePreview();
+      } else if (signatureType.value === 'draw') {
+        signaturePreview.classList.add('hidden');
+        signatureData = null;
+      } else if (signatureType.value === 'upload') {
+        signaturePreview.classList.add('hidden');
+        signatureData = null;
+      }
+    }
+
+    signatureType.addEventListener('change', showSignatureControlsForType);
+
+    function updateTypedSignaturePreview() {
+      const name = (signatureName.value || '').trim();
+      if (!name) { signaturePreview.classList.add('hidden'); signatureData = null; return; }
+      const font = signatureFont.value || 'Dancing Script';
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const fontSize = 48;
+      ctx.font = `${fontSize}px "${font}"`;
+      const padding = 20;
+      const textWidth = Math.max(200, Math.ceil(ctx.measureText(name).width));
+      canvas.width = textWidth + padding * 2;
+      canvas.height = fontSize + padding * 2;
+      // Need to reset font after resizing canvas
+      ctx.font = `${fontSize}px "${font}"`;
+      ctx.fillStyle = '#000';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(name, padding, canvas.height / 2);
+      signatureData = canvas.toDataURL('image/png');
+      signaturePreview.src = signatureData;
+      signaturePreview.classList.remove('hidden');
+
+      // Update any existing signature elements with the new font
+      updateExistingSignatureElements(font);
+    }
+
+    function updateExistingSignatureElements(newFont) {
+      overlayElements.forEach(element => {
+        if (element.type === 'signature' && element.element) {
+          // Update the visual appearance of the element
+          element.element.style.fontFamily = `"${newFont}", cursive`;
+          element.element.style.fontSize = '16px';
+          element.element.style.fontWeight = 'bold';
+        }
+      });
+    }
+
+    signatureName.addEventListener('input', updateTypedSignaturePreview);
+    signatureFont.addEventListener('change', updateTypedSignaturePreview);
+
+    // Draw signature
+    const drawCtx = drawCanvas.getContext('2d');
+    drawCtx.lineWidth = 2;
+    drawCtx.lineCap = 'round';
+    drawCtx.strokeStyle = '#000';
+    let drawing = false;
+    function startDraw(e) {
+      drawing = true; drawCtx.beginPath();
+      const p = getPos(e); drawCtx.moveTo(p.x, p.y);
+    }
+    function moveDraw(e) {
+      if (!drawing) return; const p = getPos(e); drawCtx.lineTo(p.x, p.y); drawCtx.stroke();
+    }
+    function endDraw() { drawing = false; }
+    function getPos(e) {
+      const r = drawCanvas.getBoundingClientRect();
+      const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+      const y = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+      return { x, y };
+    }
+    drawCanvas.addEventListener('mousedown', startDraw);
+    drawCanvas.addEventListener('mousemove', moveDraw);
+    document.addEventListener('mouseup', endDraw);
+    drawCanvas.addEventListener('touchstart', startDraw);
+    drawCanvas.addEventListener('touchmove', moveDraw);
+    drawCanvas.addEventListener('touchend', endDraw);
+    drawClear.addEventListener('click', function(){ drawCtx.clearRect(0,0,drawCanvas.width, drawCanvas.height); signaturePreview.classList.add('hidden'); signatureData = null; });
+    drawUse.addEventListener('click', function(){ signatureData = drawCanvas.toDataURL('image/png'); signaturePreview.src = signatureData; signaturePreview.classList.remove('hidden'); showStatus('Drawn signature ready. Click Place Signature.', 'info'); });
+
+    // Upload signature
+    uploadInput.addEventListener('change', function(){
+      const file = uploadInput.files && uploadInput.files[0];
+      if (!file) return; const reader = new FileReader();
+      reader.onload = function(e){ signatureData = e.target.result; signaturePreview.src = signatureData; signaturePreview.classList.remove('hidden'); };
+      reader.readAsDataURL(file);
+    });
+
+    // Initialize controls on load
+    showSignatureControlsForType();
+
+    // Global function for remove buttons
+    window.removeElement = function(element) {
+      const index = overlayElements.findIndex(e => e.element === element);
+      if (index > -1) {
+        overlayElements.splice(index, 1);
+      }
+      element.remove();
+      showStatus('Element removed', 'info');
+    };
+
+    // Make overlay elements draggable within the overlay container
+    function makeDraggable(el, record) {
+      let startX, startY, initLeft, initTop;
+      function onMouseDown(e) {
+        e.preventDefault();
+        const rect = overlayContainer.getBoundingClientRect();
+        startX = e.clientX;
+        startY = e.clientY;
+        // Convert current position from percentage to pixels for calculation
+        initLeft = (parseFloat(el.style.left) / 100) * rect.width;
+        initTop = (parseFloat(el.style.top) / 100) * rect.height;
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      }
+      function onMouseMove(e) {
+        const rect = overlayContainer.getBoundingClientRect();
+        const newLeftPx = Math.min(Math.max(0, initLeft + (e.clientX - startX)), rect.width - el.offsetWidth);
+        const newTopPx = Math.min(Math.max(0, initTop + (e.clientY - startY)), rect.height - el.offsetHeight);
+        const leftPct = (newLeftPx / rect.width) * 100;
+        const topPct = (newTopPx / rect.height) * 100;
+        el.style.left = leftPct + '%';
+        el.style.top = topPct + '%';
+        record.x = leftPct;
+        record.y = topPct;
+      }
+      function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+      }
+      el.addEventListener('mousedown', onMouseDown);
+    }
+  }
+
+  // Initialize only once
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEditor);
+  } else {
+    initEditor();
+  }
+
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', function() {
+    isInitialized = false;
+    initializationInProgress = false;
+  });
+})();
+</script>
+
+<style>
+  .font-cursive {
+    font-family: 'Brush Script MT', cursive, sans-serif;
+  }
+</style>
