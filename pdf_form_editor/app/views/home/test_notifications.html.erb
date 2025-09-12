@@ -1,0 +1,56 @@
+<h1 class="text-2xl font-bold mb-6">Notification Component Test</h1>
+
+<div class="grid grid-cols-1 gap-4 mb-8">
+  <div class="p-6 bg-white rounded-lg shadow">
+    <h2 class="text-lg font-semibold mb-4">Direct Component Rendering</h2>
+    <%= render(NotificationComponent.new(message: "This is a success message rendered directly", type: "success")) %>
+    <%= render(NotificationComponent.new(message: "This is an error message rendered directly", type: "error")) %>
+    <%= render(NotificationComponent.new(message: "This is a warning message rendered directly", type: "warning")) %>
+    <%= render(NotificationComponent.new(message: "This is an info message rendered directly")) %>
+  </div>
+  
+  <div class="p-6 bg-white rounded-lg shadow">
+    <h2 class="text-lg font-semibold mb-4">Container Component</h2>
+    <%= render(NotificationContainer::NotificationContainerComponent.new(position: "static")) do |container| %>
+      <% container.with_notification(message: "Notification inside a container - success", type: "success") %>
+      <% container.with_notification(message: "Notification inside a container - error", type: "error") %>
+      <% container.with_notification(message: "Notification inside a container - warning", type: "warning") %>
+      <% container.with_notification(message: "Notification inside a container - info", type: "info") %>
+    <% end %>
+  </div>
+  
+  <div class="p-6 bg-white rounded-lg shadow">
+    <h2 class="text-lg font-semibold mb-4">JavaScript Notifications</h2>
+    <div class="flex flex-wrap gap-2">
+      <button 
+        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600" 
+        onclick="showNotification('Success message from JS', 'success')">
+        Show Success
+      </button>
+      
+      <button 
+        class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600" 
+        onclick="showNotification('Error message from JS', 'error')">
+        Show Error
+      </button>
+      
+      <button 
+        class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600" 
+        onclick="showNotification('Warning message from JS', 'warning')">
+        Show Warning
+      </button>
+      
+      <button 
+        class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600" 
+        onclick="showNotification('Info message from JS', 'info')">
+        Show Info
+      </button>
+      
+      <button 
+        class="px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600" 
+        onclick="showNotification('This message <strong>contains HTML</strong> and <em>formatting</em>', 'info')">
+        Show HTML
+      </button>
+    </div>
+  </div>
+</div>

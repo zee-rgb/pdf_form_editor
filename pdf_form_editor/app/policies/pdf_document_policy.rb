@@ -57,6 +57,14 @@ class PdfDocumentPolicy < ApplicationPolicy
     update?
   end
 
+  def save_elements?
+    update?
+  end
+
+  def apply_changes?
+    update?
+  end
+
   class Scope < Scope
     def resolve
       if user.present?

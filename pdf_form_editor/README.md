@@ -18,10 +18,14 @@ A modern web application for editing and filling non-fillable PDF forms with tex
 ## 🛠️ Tech Stack
 
 - **Backend**: Ruby on Rails 8 with Hotwire/Turbo
-- **Frontend**: Alpine.js, Tailwind CSS
+- **Frontend**: 
+  - ViewComponent for modular UI components
+  - Alpine.js for interactivity
+  - Tailwind CSS for styling
+  - Stimulus controllers for JavaScript behaviors
 - **PDF Processing**: 
   - PDF.js for browser rendering
-  - HexaPDF for server-side manipulation
+  - HexaPDF and CombinePDF for server-side manipulation
 - **Authentication**: Devise
 - **Authorization**: Pundit
 - **Database**: PostgreSQL (development: SQLite)
@@ -132,21 +136,56 @@ This creates a sample form at `public/sample_form.pdf` that you can upload and t
 
 ```
 app/
+├── components/                    # ViewComponent UI components
+│   ├── notification_component.rb
+│   ├── notification_container/
+│   │   └── notification_container_component.rb
 ├── controllers/
-│   ├── application_controller.rb    # Base controller with Pundit
-│   └── pdf_documents_controller.rb  # PDF CRUD and editing endpoints
+│   ├── application_controller.rb   # Base controller with Pundit
+│   ├── notifications_controller.rb # Handles dynamic notifications
+│   └── pdf_documents_controller.rb # PDF CRUD and editing endpoints
+├── javascript/
+│   └── controllers/
+│       ├── notification_controller.js # Stimulus controller for notifications
+│       └── pdf_editor_controller.js   # Stimulus controller for PDF editing
 ├── models/
-│   ├── user.rb                     # Devise user model
-│   └── pdf_document.rb             # PDF document model with HexaPDF
+│   ├── user.rb                    # Devise user model
+│   └── pdf_document.rb            # PDF document model with HexaPDF/CombinePDF
 ├── policies/
-│   ├── application_policy.rb       # Base Pundit policy
-│   └── pdf_document_policy.rb      # PDF authorization rules
+│   ├── application_policy.rb      # Base Pundit policy
+│   └── pdf_document_policy.rb     # PDF authorization rules
 └── views/
     ├── layouts/application.html.erb # Main layout with navigation
     └── pdf_documents/
-        ├── index.html.erb          # PDF list page
-        ├── new.html.erb            # PDF upload form
-        └── edit.html.erb           # PDF editor with Alpine.js
+        ├── index.html.erb         # PDF list page
+        ├── new.html.erb           # PDF upload form
+        └── edit_overlay.html.erb  # PDF editor with Alpine.js
+```
+
+## 🧩 ViewComponent Usage
+
+This application uses ViewComponents for modular, reusable UI elements. Key components include:
+
+### Notification Components
+
+```ruby
+# Render a notification directly
+<%= render(NotificationComponent.new(message: "Success!", type: "success")) %>
+
+# Use the notification container (for multiple notifications)
+<%= render(NotificationContainer::NotificationContainerComponent.new(position: "top-right")) do |container| %>
+  <% container.with_notification(message: "First notification", type: "success") %>
+  <% container.with_notification(message: "Another notification", type: "info") %>
+<% end %>
+```
+
+### JavaScript Notifications
+
+Trigger notifications from JavaScript:
+
+```javascript
+// Show a notification from any JavaScript code
+showNotification("Your changes have been saved", "success");
 ```
 
 ## 🔒 Security Features

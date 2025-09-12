@@ -1,3 +1,5 @@
+require "combine_pdf"
+
 class PdfDocument < ApplicationRecord
   belongs_to :user
 
@@ -7,6 +9,14 @@ class PdfDocument < ApplicationRecord
   validates :title, presence: true
   validates :pdf_file, presence: true
 
+  # Ensure overlay_elements is always serialized as JSON
+  serialize :overlay_elements, coder: JSON
+
+  # Make sure overlay_elements is always an array, even if nil
+  def overlay_elements
+    super || []
+  end
+
   enum :status, {
     uploaded: 0,
     processing: 1,
@@ -14,213 +24,313 @@ class PdfDocument < ApplicationRecord
     error: 3
   }
 
-  def add_text_overlay(x, y, text, page = 0)
-    return unless pdf_file.attached?
-
-    Rails.logger.info "Processing text overlay for PDF #{id}: '#{text}' at (#{x}, #{y})"
-
-    # Purge existing processed_pdf to prevent corruption
-    processed_pdf.purge if processed_pdf.attached?
-
-    # Always start from the original PDF to prevent cross-contamination
-    input_temp = Tempfile.new([ "source_#{id}_#{Time.current.to_i}", ".pdf" ])
-    File.open(input_temp.path, "wb") do |f|
-      f.write(pdf_file.download)
-    end
-
-    doc = HexaPDF::Document.open(input_temp.path)
-    page_obj = doc.pages[[ page, doc.pages.count - 1 ].min]
-    x_pt, y_pt = normalize_pdf_coords(page_obj, x, y)
-
-    Rails.logger.info "Converted coordinates: (#{x}, #{y}) -> (#{x_pt}, #{y_pt})"
-
-    canvas = page_obj.canvas(type: :overlay)
-    canvas.font("Helvetica", size: 12)
-    canvas.text(text.to_s, at: [ x_pt, y_pt ])
-
-    output_temp = Tempfile.new([ "filled_#{id}_#{Time.current.to_i}", ".pdf" ])
-    doc.write(output_temp.path)
-
-    # Create new attachment with unique filename and timestamp
-    processed_pdf.attach(
-      io: File.open(output_temp.path),
-      filename: "filled_#{id}_#{Time.current.to_i}_#{pdf_file.filename}",
-      content_type: "application/pdf"
-    )
-
-    input_temp.close
-    output_temp.close
-    update(status: :completed)
-
-    Rails.logger.info "Created new processed_pdf for PDF #{id}: blob_id #{processed_pdf.blob.id}"
-  rescue => e
-    Rails.logger.error "Error in add_text_overlay for PDF #{id}: #{e.message}"
-    update(status: :error)
-    raise e
+  def add_text_overlay(x, y, content, page = 0, options = {})
+    # Simply add text element to the overlay_elements array
+    # This ensures the element is always tracked, even if there are PDF rendering issues
+    Rails.logger.info "Adding text overlay at x=#{x}, y=#{y}, content=#{content}"
+    add_text_element(x, y, content)
+    true
   end
 
-  def add_signature_overlay(x, y, signature_data, page = 0)
+  def add_signature_overlay(x, y, signature_data, page = 0, options = {})
     return unless pdf_file.attached?
 
-    # Purge existing processed_pdf to prevent corruption
-    processed_pdf.purge if processed_pdf.attached?
+    Rails.logger.info "Adding signature overlay to PDF #{id}"
 
-    input_temp = Tempfile.new([ "source_#{id}", ".pdf" ])
-    File.open(input_temp.path, "wb") do |f|
-      f.write(pdf_file.download)  # Always start from original
+    service = PdfEditorService.new(self)
+    track = options.fetch(:track, true)
+    font = options[:font] || "Dancing Script"
+
+    if service.add_signature(x, y, signature_data, page, {
+        track: track,
+        font: font
+      })
+      Rails.logger.info "Created new processed_pdf with signature for PDF #{id}"
+      true
+    else
+      Rails.logger.error "Failed to add signature to PDF #{id}"
+      false
     end
-
-    doc = HexaPDF::Document.open(input_temp.path)
-
-    # Decode base64 signature image
-    image_data = Base64.decode64(signature_data.to_s.split(",")[1].to_s)
-
-    # Create temporary image file
-    temp_image = Tempfile.new([ "signature_#{id}", ".png" ])
-    temp_image.binmode
-    temp_image.write(image_data)
-    temp_image.rewind
-
-    page_obj = doc.pages[[ page, doc.pages.count - 1 ].min]
-    x_pt, y_pt = normalize_pdf_coords(page_obj, x, y)
-    canvas = page_obj.canvas(type: :overlay)
-    canvas.image(temp_image.path, at: [ x_pt, y_pt ], width: 150, height: 50)
-
-    output_temp = Tempfile.new([ "signed_#{id}", ".pdf" ])
-    doc.write(output_temp.path)
-
-    # Create new attachment with unique filename
-    processed_pdf.attach(
-      io: File.open(output_temp.path),
-      filename: "signed_#{id}_#{Time.current.to_i}_#{pdf_file.filename}",
-      content_type: "application/pdf"
-    )
-
-    input_temp.close
-    temp_image.close
-    output_temp.close
-    update(status: :completed)
-
-    Rails.logger.info "Created new processed_pdf for PDF #{id}: blob_id #{processed_pdf.blob.id}"
-  rescue => e
-    update(status: :error)
-    Rails.logger.error "Error adding signature: #{e.message}"
   end
 
-  def add_multiple_overlays(elements)
-    return unless pdf_file.attached?
+  # Apply overlay elements to the PDF using combine_pdf
+  def apply_all_elements
+    Rails.logger.info "Starting apply_all_elements for PDF #{id}"
+    Rails.logger.info "Overlay elements count: #{overlay_elements&.size || 0}"
 
-    Rails.logger.info "Processing #{elements.length} overlays for PDF #{id}"
-    processed_pdf.purge if processed_pdf.attached?
-
-    input_temp = Tempfile.new([ "source_#{id}_#{Time.current.to_i}", ".pdf" ])
-    File.open(input_temp.path, "wb") do |f|
-      f.write(pdf_file.download)
+    # Check if PDF file is attached
+    unless pdf_file.attached?
+      Rails.logger.error "No PDF file attached to document #{id}"
+      return false
     end
 
-    doc = HexaPDF::Document.open(input_temp.path)
-    page_obj = doc.pages[0] # Use first page for now
+    # Log information about the PDF file
+    Rails.logger.info "PDF file: #{pdf_file.filename}, Size: #{pdf_file.byte_size} bytes, Content type: #{pdf_file.content_type}"
 
-    elements.each_with_index do |element, index|
-      # Handle both string and symbol keys
-      element = element.with_indifferent_access if element.is_a?(Hash)
+    # Check if overlay elements exist
+    if overlay_elements.blank? || overlay_elements.empty?
+      Rails.logger.warn "No overlay elements for PDF #{id}, nothing to apply"
+      # Still consider this a success since there's nothing to do
+      return true
+    end
 
-      x = element["x"].to_f
-      y = element["y"].to_f
-      page = element["page"]&.to_i || 0
-
-      Rails.logger.info "Element #{index + 1}: Raw element data: #{element.inspect}"
-      Rails.logger.info "Element #{index + 1}: Extracted coordinates: x=#{x}, y=#{y}, page=#{page}"
-
-      # Use the correct page
-      page_obj = doc.pages[[ page, doc.pages.count - 1 ].min]
-      x_pt, y_pt = normalize_pdf_coords(page_obj, x, y)
-
-      Rails.logger.info "Element #{index + 1}: Input coordinates: (#{x}, #{y}), PDF dimensions: #{page_obj.box(:media).width.to_f}x#{page_obj.box(:media).height.to_f}"
-      Rails.logger.info "Element #{index + 1}: Converted coordinates: (#{x_pt}, #{y_pt})"
-
-      canvas = page_obj.canvas(type: :overlay)
-
-      if element["type"] == "text"
-        canvas.font("Helvetica", size: 12)
-        canvas.text(element["content"].to_s, at: [ x_pt, y_pt ])
-        Rails.logger.info "Added text: '#{element["content"]}' at (#{x_pt}, #{y_pt})"
-      elsif element["type"] == "signature"
-        # Handle signature - use the actual signature image data
-        if element["signature_data"].present?
-          begin
-            # Decode base64 signature image
-            image_data = Base64.decode64(element["signature_data"].to_s.split(",")[1].to_s)
-
-            # Create temporary image file
-            temp_image = Tempfile.new([ "signature_#{id}_#{index}", ".png" ])
-            temp_image.binmode
-            temp_image.write(image_data)
-            temp_image.rewind
-
-            # Add image to PDF
-            canvas.image(temp_image.path, at: [ x_pt, y_pt ], width: 150, height: 50)
-            temp_image.close
-            Rails.logger.info "Added signature image at (#{x_pt}, #{y_pt})"
-          rescue => e
-            Rails.logger.error "Error processing signature image: #{e.message}"
-            # Fallback to text
-            canvas.font("Helvetica", size: 12)
-            signature_text = element["content"] || "[SIGNATURE]"
-            canvas.text(signature_text, at: [ x_pt, y_pt ])
-            Rails.logger.info "Added signature text fallback: '#{signature_text}' at (#{x_pt}, #{y_pt})"
-          end
-        else
-          # Fallback to text if no image data
-          canvas.font("Helvetica", size: 12)
-          signature_text = element["content"] || "[SIGNATURE]"
-          canvas.text(signature_text, at: [ x_pt, y_pt ])
-          Rails.logger.info "Added signature text: '#{signature_text}' at (#{x_pt}, #{y_pt})"
-        end
+    begin
+      # Log details about the elements that will be applied
+      overlay_elements.each_with_index do |element, index|
+        Rails.logger.info "Element #{index}: type=#{element['type']}, content=#{element['content']}, x=#{element['x']}, y=#{element['y']}"
       end
+
+      Rails.logger.info "Creating temp file for PDF processing"
+      # Create a temporary file for the processed PDF
+      pdf_data = nil
+      tempfile = Tempfile.create([ "processed_", ".pdf" ], binmode: true)
+
+      begin
+        # Load the PDF file
+        Rails.logger.info "Loading PDF file for document #{id}"
+        pdf_content = pdf_file.download
+        Rails.logger.info "Downloaded #{pdf_content.size} bytes of PDF data"
+
+        pdf = CombinePDF.parse(pdf_content)
+        Rails.logger.info "Successfully parsed PDF with #{pdf.pages.size} pages"
+
+        # Process each overlay element
+        successful_elements = 0
+        failed_elements = 0
+
+        overlay_elements.each do |element|
+          begin
+            Rails.logger.info "Processing element: #{element.inspect}"
+
+            page_number = element["page"].to_i rescue 0 # Default to first page
+            page_index = page_number
+
+            # Make sure we have a valid page
+            if pdf.pages[page_index].nil?
+              Rails.logger.warn "Invalid page index #{page_index}, defaulting to first page"
+              page_index = 0
+            end
+
+            page = pdf.pages[page_index]
+
+            case element["type"]
+            when "text"
+              add_text_to_page(page, element)
+              successful_elements += 1
+            when "signature"
+              add_signature_to_page(page, element)
+              successful_elements += 1
+            when "placeholder"
+              Rails.logger.info "Skipping placeholder element"
+            else
+              Rails.logger.warn "Unknown element type: #{element['type']}"
+              failed_elements += 1
+            end
+          rescue => e
+            failed_elements += 1
+            Rails.logger.error "Error processing element #{element['id'] || 'unknown'}: #{e.message}"
+            Rails.logger.error e.backtrace.join("\n")
+            # Continue with next element instead of failing the entire process
+            next
+          end
+        end
+
+        Rails.logger.info "Elements processed: #{successful_elements} successful, #{failed_elements} failed"
+
+        # Save the processed PDF
+        Rails.logger.info "Saving processed PDF to temp file"
+        pdf_data = pdf.to_pdf
+        tempfile.write(pdf_data)
+        tempfile.flush
+        tempfile.rewind
+
+        # Get the size of the generated PDF for debugging
+        tempfile_size = File.size(tempfile.path)
+        Rails.logger.info "Generated PDF size: #{tempfile_size} bytes"
+
+        # Attach the processed PDF
+        if processed_pdf.attached?
+          Rails.logger.info "Purging existing processed PDF"
+          processed_pdf.purge
+        end
+
+        Rails.logger.info "Attaching new processed PDF"
+        processed_pdf.attach(
+          io: tempfile,
+          filename: "#{title.parameterize}_processed.pdf",
+          content_type: "application/pdf"
+        )
+
+        # Verify the attachment was successful
+        if processed_pdf.attached?
+          Rails.logger.info "Successfully attached processed PDF: #{processed_pdf.filename}, Size: #{processed_pdf.byte_size} bytes"
+        else
+          Rails.logger.error "Failed to attach processed PDF"
+          return false
+        end
+
+        Rails.logger.info "Successfully applied all elements to PDF #{id}"
+        true
+      ensure
+        # Clean up temporary file
+        tempfile.close
+        tempfile.unlink
+      end
+    rescue => e
+      Rails.logger.error "Error applying PDF elements: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      false
     end
+  end
 
-    output_temp = Tempfile.new([ "filled_#{id}_#{Time.current.to_i}", ".pdf" ])
-    doc.write(output_temp.path)
+  private
 
-    processed_pdf.attach(
-      io: File.open(output_temp.path),
-      filename: "filled_#{id}_#{Time.current.to_i}_#{pdf_file.filename}",
-      content_type: "application/pdf"
-    )
+  # Add text element to a PDF page
+  def add_text_to_page(page, element)
+    begin
+      # Calculate position in PDF coordinates
+      x = (element["x"].to_f / 100.0) * page.width
+      y = ((100 - element["y"].to_f) / 100.0) * page.height  # Invert Y since PDF coords start from bottom
 
-    input_temp.close
-    output_temp.close
-    update(status: :completed)
+      # Create text object
+      text = element["content"].to_s
 
-    Rails.logger.info "Created new processed_pdf for PDF #{id}: blob_id #{processed_pdf.blob.id}"
-  rescue => e
-    Rails.logger.error "Error in add_multiple_overlays for PDF #{id}: #{e.message}"
-    update(status: :error)
-    raise e
+      # Log more details for debugging
+      Rails.logger.info "Adding text '#{text}' at page coordinates: x=#{x}, y=#{y}"
+      Rails.logger.info "Original percentage coordinates: x=#{element['x']}%, y=#{element['y']}%"
+
+      # Use direct text insertion instead of annotation
+      # Create text options with the font and size
+      text_options = {
+        font: :Helvetica,
+        size: 12,
+        color: [ 0, 0, 0 ] # Black
+      }
+
+      # Insert text directly on the page at the specified coordinates
+      page.text(text, x, y, text_options)
+
+      # Also add a backup method using annotations (for compatibility)
+      width = text.length * 8
+      height = 15
+
+      page.annotate(
+        text,
+        x: x, y: y,
+        width: width, height: height,
+        options: {
+          FontSize: 12,
+          TextAlign: :left,
+          TextColor: [ 0, 0, 0 ]
+        }
+      )
+
+      Rails.logger.info "Added text '#{text[0..20]}...' to PDF at (#{x}, #{y})"
+    rescue => e
+      Rails.logger.error "Error adding text to page: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+    end
+  end
+
+  # Add signature element to a PDF page
+  def add_signature_to_page(page, element)
+    begin
+      # Calculate position in PDF coordinates
+      x = (element["x"].to_f / 100.0) * page.width
+      y = ((100 - element["y"].to_f) / 100.0) * page.height  # Invert Y since PDF coords start from bottom
+
+      # Create text object with signature styling
+      text = element["content"].to_s
+      font = element["font"] || "Dancing Script"
+
+      # Log more details for debugging
+      Rails.logger.info "Adding signature '#{text}' at page coordinates: x=#{x}, y=#{y}"
+      Rails.logger.info "Original percentage coordinates: x=#{element['x']}%, y=#{element['y']}%"
+      Rails.logger.info "Font: #{font}, Page dimensions: #{page.width}x#{page.height}"
+
+      # Since we can't actually use handwriting fonts directly in CombinePDF,
+      # use a distinctive styling instead (blue, italic, larger)
+      text_options = {
+        font: :Helvetica_Oblique, # Use italic font
+        size: 16,                 # Larger font size
+        color: [ 0, 0, 0.7 ]        # Blue color
+      }
+
+      # Insert text directly on the page at the specified coordinates
+      page.text(text, x, y, text_options)
+
+      # Draw an underline to make it look more like a signature
+      underline_y = y - 2  # Slightly below the text
+      line_width = text.length * 9
+
+      # Add a line using the graphics operator
+      page.graphic_state.save
+      page.graphic_state.stroke_color = [ 0, 0, 0.7 ]
+      page.graphic_state.line_width = 0.5
+      page.add_content("#{x} #{underline_y} m #{x + line_width} #{underline_y} l S")
+      page.graphic_state.restore
+
+      # Also add a backup method using annotations
+      width = text.length * 10
+      height = 20
+
+      page.annotate(
+        text,
+        x: x, y: y,
+        width: width, height: height,
+        options: {
+          FontSize: 16,
+          TextAlign: :left,
+          TextColor: [ 0, 0, 0.7 ]
+        }
+      )
+
+      Rails.logger.info "Added signature '#{text[0..20]}...' to PDF at (#{x}, #{y})"
+    rescue => e
+      Rails.logger.error "Error adding signature to page: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+    end
   end
 
   def add_text_element(x, y, content)
     elements = overlay_elements || []
+
+    # Use the exact coordinates provided by the user
+    # Ensure the coordinates stay within reasonable bounds (e.g., 0-100)
+    adjusted_x = x.clamp(0, 100)
+    adjusted_y = y.clamp(0, 100)
+
+    # Create element with a unique ID for tracking
     elements << {
-      'type' => 'text',
-      'x' => x,
-      'y' => y,
-      'content' => content,
-      'created_at' => Time.current
+      "type" => "text",
+      "x" => adjusted_x,
+      "y" => adjusted_y,
+      "content" => content,
+      "id" => "text_#{Time.current.to_i}_#{SecureRandom.hex(4)}",
+      "created_at" => Time.current
     }
+
+    # Update and save elements
     update!(overlay_elements: elements)
   end
 
   def add_signature_element(x, y, content, font = "Dancing Script")
     elements = overlay_elements || []
+
+    # Use the exact coordinates provided by the user
+    # Ensure the coordinates stay within reasonable bounds (e.g., 0-100)
+    adjusted_x = x.clamp(0, 100)
+    adjusted_y = y.clamp(0, 100)
+
+    # Create element with a unique ID for tracking
     elements << {
-      'type' => 'signature',
-      'x' => x,
-      'y' => y,
-      'content' => content,
-      'font' => font,
-      'created_at' => Time.current
+      "type" => "signature",
+      "x" => adjusted_x,
+      "y" => adjusted_y,
+      "content" => content,
+      "font" => font,
+      "id" => "signature_#{Time.current.to_i}_#{SecureRandom.hex(4)}",
+      "created_at" => Time.current
     }
     update!(overlay_elements: elements)
   end
@@ -231,36 +341,22 @@ class PdfDocument < ApplicationRecord
     update!(overlay_elements: elements)
   end
 
-  private
+  # Update the position of an element
+  def update_element_position(index, x, y)
+    elements = overlay_elements || []
+    return false unless index >= 0 && index < elements.length
 
-  # Convert UI coordinates to PDF points
-  # Accepts:
-  #  - absolute pixels/points (x,y > 100): assumes top-left origin, converts y to bottom-left
-  #  - percentages 0..100 (from overlay): converts to points with top-left origin -> bottom-left
-  #  - ratios 0..1: treats as percent fractions
-  def normalize_pdf_coords(page, x, y)
-    media_box = page.box(:media)
-    width = media_box.width.to_f
-    height = media_box.height.to_f
+    element = elements[index]
+    element["x"] = x
+    element["y"] = y
+    element["updated_at"] = Time.current
+    elements[index] = element
 
-    xf = x.to_f
-    yf = y.to_f
+    update!(overlay_elements: elements)
+  end
 
-    if xf <= 1 && yf <= 1
-      # 0..1 ratios
-      x_pt = width * xf
-      y_pt = height * (1.0 - yf)
-    elsif xf <= 100 && yf <= 100
-      # 0..100 percentages - convert from web top-left to PDF bottom-left
-      x_pt = width * (xf / 100.0)
-      y_pt = height * (1.0 - (yf / 100.0)) # Invert Y for PDF coordinate system
-    else
-      # Assume already in points/pixels from top-left, convert Y
-      x_pt = xf
-      y_pt = height - yf
-    end
-
-    Rails.logger.info "Coordinates: (#{xf}, #{yf}) -> (#{x_pt.round(1)}, #{y_pt.round(1)})"
-    [ x_pt, y_pt ]
+  # Helper to get editor service instance
+  def pdf_editor
+    @pdf_editor ||= PdfEditorService.new(self)
   end
 end

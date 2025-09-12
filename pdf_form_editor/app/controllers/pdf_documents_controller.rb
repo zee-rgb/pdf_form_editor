@@ -1,5 +1,5 @@
 class PdfDocumentsController < ApplicationController
-  before_action :set_pdf_document, only: [ :show, :edit, :overlay_edit, :simple_edit, :basic_view, :embed_view, :update, :destroy, :add_text, :add_signature, :add_multiple_elements, :download, :stream ]
+  before_action :set_pdf_document, only: [ :show, :edit, :overlay_edit, :simple_edit, :basic_view, :embed_view, :update, :destroy, :add_text, :add_signature, :add_multiple_elements, :remove_element, :download, :stream, :apply_changes, :update_element_position, :save_elements ]
   skip_before_action :verify_authenticity_token, only: [ :stream ]
 
   def index
@@ -52,6 +52,15 @@ class PdfDocumentsController < ApplicationController
 
   def overlay_edit
     authorize @pdf_document
+
+    # Reset error status when opening for editing
+    if @pdf_document.status == "error"
+      @pdf_document.update(status: :uploaded)
+    end
+
+    # Clear flash messages that shouldn't persist on page load
+    flash.now[:notice] = nil
+
     # Force HTML template when navigated from a turbo_stream redirect
     respond_to do |format|
       format.html { render "edit_overlay" }
@@ -79,22 +88,12 @@ class PdfDocumentsController < ApplicationController
     x = params[:x].to_f
     y = params[:y].to_f
     content = params[:content] || params[:text] # Support both parameter names for backward compatibility
-    page = params[:page]&.to_i || 0
-    
-    # For test compatibility, we need to handle the case where the test is using the old format
-    # but our controller expects the new format
-    if request.format.json? && request.content_type =~ /application\/json/i
-      # Try to handle JSON format with old parameter names for tests
-      params_json = request.body.read
-      if params_json.present?
-        begin
-          json_params = JSON.parse(params_json)
-          content ||= json_params['text']
-        rescue JSON::ParserError
-          # Ignore JSON parse errors
-        end
-      end
-    end
+    page_number = params[:page]&.to_i || 0
+    font_name = params[:font] || "Helvetica"
+    font_size_pt = params[:font_size]&.to_i || 12
+
+    # Log incoming parameters for debugging
+    Rails.logger.info "ADD TEXT: Received params - x: #{x}, y: #{y}, content: #{content}, page: #{page_number}, font: #{font_name}, size: #{font_size_pt}"
 
     # Validate input
     if content.blank?
@@ -110,37 +109,52 @@ class PdfDocumentsController < ApplicationController
       return
     end
 
+    # Validate position - ensure we have coordinates
+    if x <= 0 || y <= 0
+      Rails.logger.warn "Invalid coordinates for text: x=#{x}, y=#{y}. Using defaults."
+      # Use default position in the middle of the page if none provided
+      x = 50.0
+      y = 50.0
+    end
+
     Rails.logger.info "Adding text to PDF ID: #{@pdf_document.id}, title: #{@pdf_document.title}, content: '#{content}'"
 
     # Ensure we're working with the correct PDF
     @pdf_document.reload
 
-    # Add text overlay to the PDF
-    @pdf_document.add_text_overlay(x, y, content, page)
-
-    # Store the element in overlay_elements if that field exists
-    if @pdf_document.respond_to?(:overlay_elements)
-      @pdf_document.add_text_element(x, y, content)
-    end
+    # Add the text element directly
+    @pdf_document.add_text_element(x, y, content)
+    success = true
 
     respond_to do |format|
-      format.turbo_stream do
-        flash.now[:notice] = "Text added successfully"
-        render turbo_stream: [
-          turbo_stream.replace("status_messages", partial: "shared/flash_messages"),
-          turbo_stream.replace("overlay_elements", partial: "pdf_documents/overlay_elements",
-                              locals: { pdf_document: @pdf_document })
-        ]
-      end
-      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Text added successfully" }
-      format.json do 
-        render json: { 
-          status: "success", 
-          message: "Text added successfully to #{@pdf_document.title}", 
-          pdf_id: @pdf_document.id, 
-          pdf_title: @pdf_document.title, 
-          pdf_status: @pdf_document.status 
-        }
+      if success
+        format.turbo_stream do
+          flash.now[:notice] = "Text added successfully"
+          @pdf_document.reload # Ensure we have latest elements
+          render turbo_stream: [
+            turbo_stream.replace("status_messages", partial: "shared/flash_messages"),
+            turbo_stream.replace("overlay_elements", partial: "pdf_documents/overlay_elements",
+                                locals: { pdf_document: @pdf_document })
+          ]
+        end
+        format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Text added successfully" }
+        format.json do
+          render json: {
+            status: "success",
+            message: "Text added successfully to #{@pdf_document.title}",
+            pdf_id: @pdf_document.id,
+            pdf_title: @pdf_document.title,
+            pdf_status: @pdf_document.status
+          }
+        end
+      else
+        format.turbo_stream do
+          flash.now[:alert] = "Failed to add text to PDF"
+          render turbo_stream: turbo_stream.replace("status_messages",
+            partial: "shared/flash_messages")
+        end
+        format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Failed to add text to PDF" }
+        format.json { render json: { status: "error", message: "Failed to add text to PDF" }, status: :unprocessable_entity }
       end
     end
   rescue => e
@@ -160,13 +174,14 @@ class PdfDocumentsController < ApplicationController
     authorize @pdf_document
     x = params[:x].to_f
     y = params[:y].to_f
-    content = params[:content]
-    signature_data = params[:signature_data] # For backward compatibility
+    content = params[:content].to_s.strip
     font = params[:font] || "Dancing Script"
-    page = params[:page]&.to_i || 0
 
-    # Validate input - for backward compatibility, we allow either content OR signature_data
-    if content.blank? && signature_data.blank?
+    # Log request parameters for debugging
+    Rails.logger.info "Adding signature with params: x=#{x}, y=#{y}, content=#{content}, font=#{font}"
+
+    # Validate input
+    if content.blank?
       respond_to do |format|
         format.turbo_stream do
           flash.now[:alert] = "Signature content cannot be blank"
@@ -179,41 +194,26 @@ class PdfDocumentsController < ApplicationController
       return
     end
 
-    Rails.logger.info "Adding signature to PDF ID: #{@pdf_document.id}, title: #{@pdf_document.title}"
-    @pdf_document.reload
+    # Validate position - ensure we have coordinates
+    if x <= 0 || y <= 0
+      Rails.logger.warn "Invalid coordinates for signature: x=#{x}, y=#{y}. Using defaults."
+      # Use default position in the middle of the page if none provided
+      x = 50.0
+      y = 50.0
+    end
 
-    # Create a simple signature image using the font specified
-    signature_data = nil
-    if params[:signature_type] == "typed"
-      # Here we'd normally generate a base64 image of the typed signature
-      # For simplicity, we'll use the existing method but this could be enhanced
-      @pdf_document.add_signature_element(x, y, content, font)
-    end
-    
-    # For test compatibility, we need to simulate a successful signature addition
-    # This ensures that the tests in the old format pass
-    # Actual implementation may vary based on the business logic
-    if request.format.json? && params[:signature_type] == "typed" && content.present?
-      # For tests with the new format using content but no signature_data
-      # Create a simple signature
-      Rails.logger.info "Adding typed signature using content for JSON request"
-      @pdf_document.add_signature_element(x, y, content, font)
-      
-      # Add success feedback but don't process the PDF to avoid overhead during tests
-      Rails.logger.info "Skipped actual PDF processing for test compatibility"
-    elsif signature_data.present?
-      # Use signature data if provided (backward compatibility)
-      @pdf_document.add_signature_overlay(x, y, signature_data, page)
-    elsif content.present?
-      # Handle as text if no image data but content is provided
-      @pdf_document.add_text_overlay(x, y, content, page, font: font, font_size: 16)
-    else
-      Rails.logger.info "No valid signature data or content provided"
-    end
+    Rails.logger.info "Adding signature to PDF ID: #{@pdf_document.id}, title: #{@pdf_document.title}"
+
+    # Add signature as an overlay element
+    @pdf_document.add_signature_element(x, y, content, font)
+
+    # Refresh from database to ensure we have the latest data
+    @pdf_document.reload
 
     respond_to do |format|
       format.turbo_stream do
         flash.now[:notice] = "Signature added successfully"
+        @pdf_document.reload # Ensure we have latest elements
         render turbo_stream: [
           turbo_stream.replace("status_messages", partial: "shared/flash_messages"),
           turbo_stream.replace("overlay_elements", partial: "pdf_documents/overlay_elements",
@@ -221,24 +221,24 @@ class PdfDocumentsController < ApplicationController
         ]
       end
       format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Signature added successfully" }
-      format.json { 
-        render json: { 
-          status: "success", 
-          message: "Signature added successfully to #{@pdf_document.title}", 
-          pdf_id: @pdf_document.id 
-        } 
+      format.json {
+        render json: {
+          status: "success",
+          message: "Signature added successfully to #{@pdf_document.title}",
+          pdf_id: @pdf_document.id
+        }
       }
     end
   rescue => e
-    Rails.logger.error "Error adding signature to PDF ID #{@pdf_document.id}: #{e.message}"
+    Rails.logger.error "Error adding signature: #{e.message}"
     respond_to do |format|
       format.turbo_stream do
-        flash.now[:alert] = "Error adding signature: #{e.message}"
+        flash.now[:alert] = "Failed to add signature to PDF: #{e.message}"
         render turbo_stream: turbo_stream.replace("status_messages",
           partial: "shared/flash_messages")
       end
-      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Error adding signature: #{e.message}" }
-      format.json { render json: { status: "error", message: e.message }, status: :unprocessable_entity }
+      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Failed to add signature to PDF" }
+      format.json { render json: { status: "error", message: "Failed to add signature to PDF" }, status: :unprocessable_entity }
     end
   end
 
@@ -281,18 +281,44 @@ class PdfDocumentsController < ApplicationController
 
   def download
     authorize @pdf_document
+    Rails.logger.info "Download requested for PDF #{@pdf_document.id}"
+
+    # Ensure we have the latest data
+    @pdf_document.reload
+
+    # If we have overlay elements but no processed PDF, generate it first
+    if !@pdf_document.processed_pdf.attached? &&
+       @pdf_document.pdf_file.attached? &&
+       @pdf_document.overlay_elements.present?
+
+      Rails.logger.info "No processed PDF found but overlay elements exist. Generating PDF with overlays."
+      result = @pdf_document.apply_all_elements
+
+      if result
+        Rails.logger.info "Successfully generated processed PDF before download"
+        # Reload to ensure we get the latest attachment
+        @pdf_document.reload
+      else
+        Rails.logger.error "Failed to generate processed PDF before download"
+      end
+    end
+
+    # Send the processed PDF if it exists
     if @pdf_document.processed_pdf.attached?
+      Rails.logger.info "Sending processed PDF for download, #{@pdf_document.processed_pdf.blob.byte_size} bytes"
       send_data @pdf_document.processed_pdf.download,
                 filename: @pdf_document.processed_pdf.filename.to_s,
                 type: "application/pdf",
                 disposition: "attachment"
     elsif @pdf_document.pdf_file.attached?
       # Fallback to original PDF to avoid dead ends
+      Rails.logger.info "No processed PDF available, sending original PDF for download"
       send_data @pdf_document.pdf_file.download,
                 filename: @pdf_document.pdf_file.filename.to_s,
                 type: "application/pdf",
                 disposition: "attachment"
     else
+      Rails.logger.error "No PDF file available for download, PDF ID: #{@pdf_document.id}"
       redirect_back(fallback_location: pdf_documents_path, alert: "No PDF available to download")
     end
   end
@@ -352,6 +378,174 @@ class PdfDocumentsController < ApplicationController
     end
   end
 
+  # Remove an element from the PDF by index
+  def remove_element
+    authorize @pdf_document
+    index = params[:index].to_i
+    @pdf_document.remove_element(index)
+
+    respond_to do |format|
+      format.turbo_stream do
+        flash.now[:notice] = "Element removed successfully"
+        render turbo_stream: [
+          turbo_stream.replace("status_messages", partial: "shared/flash_messages"),
+          turbo_stream.replace("overlay_elements", partial: "pdf_documents/overlay_elements",
+                              locals: { pdf_document: @pdf_document })
+        ]
+      end
+      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Element removed successfully!" }
+      format.json { render json: { status: "success", message: "Element removed successfully" } }
+    end
+  rescue => e
+    Rails.logger.error "Error removing element: #{e.message}"
+    respond_to do |format|
+      format.turbo_stream do
+        flash.now[:alert] = "Error removing element: #{e.message}"
+        render turbo_stream: turbo_stream.replace("status_messages",
+          partial: "shared/flash_messages")
+      end
+      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Error removing element: #{e.message}" }
+      format.json { render json: { status: "error", message: e.message }, status: :unprocessable_entity }
+    end
+  end
+
+  # Apply all changes and generate the final PDF
+  def apply_changes
+    authorize @pdf_document
+    Rails.logger.info "Starting apply_changes for PDF #{@pdf_document.id}"
+    Rails.logger.info "Request format: #{request.format}, XHR: #{request.xhr?}, Accept: #{request.headers['Accept']}"
+
+    # Force JSON response for fetch requests from our JavaScript
+    if request.xhr? || request.headers["Accept"].to_s.include?("application/json")
+      request.format = :json
+      Rails.logger.info "Forcing JSON response format"
+    end
+
+    # First verify if PDF file is attached and elements exist
+    if !@pdf_document.pdf_file.attached?
+      Rails.logger.error "No PDF file attached to document #{@pdf_document.id}"
+      if request.xhr? || request.format.json?
+        return render json: { status: "error", message: "No PDF file attached" }, status: :unprocessable_entity
+      else
+        return redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "No PDF file attached"
+      end
+    end
+
+    if @pdf_document.overlay_elements.blank?
+      Rails.logger.warn "No overlay elements for PDF #{@pdf_document.id}"
+    end
+
+    # Try to apply the elements
+    begin
+      Rails.logger.info "Calling apply_all_elements for PDF #{@pdf_document.id}"
+
+      result = @pdf_document.apply_all_elements
+      Rails.logger.info "Result of apply_all_elements: #{result}"
+
+      if result
+        Rails.logger.info "Successfully applied changes to PDF #{@pdf_document.id}"
+        if request.xhr? || request.format.json?
+          render json: { status: "success", message: "All changes saved successfully" }
+        else
+          redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "All changes saved successfully!"
+        end
+      else
+        Rails.logger.error "Failed to apply changes to PDF #{@pdf_document.id}"
+        if request.xhr? || request.format.json?
+          render json: { status: "error", message: "Failed to apply changes" }, status: :unprocessable_entity
+        else
+          redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Failed to apply changes"
+        end
+      end
+    rescue => e
+      Rails.logger.error "Error applying changes to PDF #{@pdf_document.id}: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      if request.xhr? || request.format.json?
+        render json: { status: "error", message: e.message }, status: :unprocessable_entity
+      else
+        redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Error applying changes: #{e.message}"
+      end
+    end
+  end
+
+  # Update position of an overlay element
+  def update_element_position
+    authorize @pdf_document
+    index = params[:index].to_i
+    x = params[:x].to_f
+    y = params[:y].to_f
+
+    begin
+      if @pdf_document.update_element_position(index, x, y)
+        render json: { status: "success", message: "Element position updated" }
+      else
+        render json: { status: "error", message: "Failed to update element position" }, status: :unprocessable_entity
+      end
+    rescue => e
+      Rails.logger.error "Error updating element position: #{e.message}"
+      render json: { status: "error", message: e.message }, status: :unprocessable_entity
+    end
+  end
+
+  # Save all overlay elements at once
+  def save_elements
+    authorize @pdf_document
+
+    # Log everything we receive for debugging
+    Rails.logger.info "=== SAVE ELEMENTS DEBUG ==="
+    Rails.logger.info "PDF ID: #{@pdf_document.id}"
+    Rails.logger.info "Content Type: #{request.content_type}"
+    Rails.logger.info "Format: #{request.format}"
+    Rails.logger.info "Params: #{params.inspect}"
+    Rails.logger.info "Raw post: #{request.raw_post[0..200]}" if request.raw_post.present?
+
+    # Very simple implementation for now
+    begin
+      # Get the elements
+      elements_param = params[:elements]
+
+      # Simple validation
+      if elements_param.blank?
+        Rails.logger.warn "Elements parameter is blank"
+        render json: { status: "error", message: "Elements parameter is blank" }, status: :unprocessable_entity
+        return
+      end
+
+      # Try to handle both string JSON and structured data
+      elements = nil
+
+      if elements_param.is_a?(String)
+        Rails.logger.info "Elements received as string, parsing JSON"
+        elements = JSON.parse(elements_param)
+      elsif elements_param.is_a?(Array)
+        Rails.logger.info "Elements received as array"
+        elements = elements_param
+      elsif elements_param.is_a?(Hash)
+        Rails.logger.info "Elements received as hash"
+        elements = [ elements_param ]
+      else
+        Rails.logger.info "Elements are of unknown type: #{elements_param.class}"
+        elements = [ elements_param ]
+      end
+
+      Rails.logger.info "Final elements to save: #{elements.inspect[0..100]}..."
+
+      # Update the document
+      @pdf_document.update!(overlay_elements: elements)
+      Rails.logger.info "Successfully updated PDF #{@pdf_document.id}"
+
+      # Send response based on format
+      respond_to do |format|
+        format.json { render json: { status: "success", message: "Elements saved successfully" } }
+        format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Elements saved successfully" }
+      end
+    rescue => e
+      Rails.logger.error "Error saving elements: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      render json: { status: "error", message: "Error saving: #{e.message}" }, status: :unprocessable_entity
+    end
+  end
+
   private
 
   def add_text_element
@@ -380,36 +574,6 @@ class PdfDocumentsController < ApplicationController
       redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Signature added successfully!"
     else
       redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Please enter signature content."
-    end
-  end
-
-  def remove_element
-    authorize @pdf_document
-    index = params[:index].to_i
-    @pdf_document.remove_element(index)
-
-    respond_to do |format|
-      format.turbo_stream do
-        flash.now[:notice] = "Element removed successfully"
-        render turbo_stream: [
-          turbo_stream.replace("status_messages", partial: "shared/flash_messages"),
-          turbo_stream.replace("overlay_elements", partial: "pdf_documents/overlay_elements",
-                              locals: { pdf_document: @pdf_document })
-        ]
-      end
-      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), notice: "Element removed successfully!" }
-      format.json { render json: { status: "success", message: "Element removed successfully" } }
-    end
-  rescue => e
-    Rails.logger.error "Error removing element: #{e.message}"
-    respond_to do |format|
-      format.turbo_stream do
-        flash.now[:alert] = "Error removing element: #{e.message}"
-        render turbo_stream: turbo_stream.replace("status_messages",
-          partial: "shared/flash_messages")
-      end
-      format.html { redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Error removing element: #{e.message}" }
-      format.json { render json: { status: "error", message: e.message }, status: :unprocessable_entity }
     end
   end
 

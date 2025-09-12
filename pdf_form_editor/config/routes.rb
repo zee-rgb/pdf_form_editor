@@ -6,6 +6,9 @@ Rails.application.routes.draw do
       post :add_text
       post :add_signature
       post :add_multiple_elements
+      post :apply_changes
+      post :update_element_position
+      post :save_elements
       delete :remove_element
       get :download
       get :stream
@@ -16,7 +19,22 @@ Rails.application.routes.draw do
     end
   end
 
+  # Signature-related routes
+  resources :signatures, only: [] do
+    collection do
+      post :preview
+    end
+  end
+
+  # Notification routes
+  resources :notifications, only: [] do
+    collection do
+      post :create
+    end
+  end
+
   root "home#index"
+  get "test_notifications" => "home#test_notifications", as: :test_notifications
 
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 

@@ -10,6 +10,17 @@ gem "sqlite3", ">= 2.1"
 gem "pg", "~> 1.5"
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
+# Use Redis adapter to run Action Cable in production
+# gem "redis", ">= 4.0.1"
+
+# PDF manipulation and processing gems
+gem "hexapdf"       # Modern PDF manipulation library
+gem "combine_pdf"   # For merging and basic PDF operations
+gem "image_processing", "~> 1.2" # For signature images
+gem "mini_magick"   # For image manipulation
+
+# Use Kredis to get higher-level data types in Redis [https://github.com/rails/kredis]
+# gem "kredis", ">= 5.0"
 # Use JavaScript with ESM import maps [https://github.com/rails/importmap-rails]
 gem "importmap-rails"
 # Hotwire's SPA-like page accelerator [https://turbo.hotwired.dev]
@@ -20,6 +31,9 @@ gem "stimulus-rails"
 gem "tailwindcss-rails"
 # Build JSON APIs with ease [https://github.com/rails/jbuilder]
 gem "jbuilder"
+
+# Use ViewComponent for component-based views [https://viewcomponent.org]
+gem "view_component", "~> 3.10"
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
@@ -42,10 +56,7 @@ gem "kamal", require: false
 gem "thruster", require: false
 
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
-gem "image_processing", "~> 1.2"
-
-# PDF processing
-gem "hexapdf"
+# PDF processing is handled by hexapdf and combine_pdf gems above
 
 # Supabase storage integration (using AWS S3 SDK for S3-compatible API)
 gem "aws-sdk-s3", require: false
