@@ -1,12 +1,25 @@
-<%= turbo_frame_tag "status_messages" do %>
-  <% if notice %>
-    <div class="max-w-lg mx-auto mt-4 p-3 rounded bg-green-500 text-white">
-      <%= notice %>
-    </div>
-  <% end %>
-  <% if alert %>
-    <div class="max-w-lg mx-auto mt-4 p-3 rounded bg-red-500 text-white">
-      <%= alert %>
-    </div>
-  <% end %>
+<% if notice || alert %>
+  <div class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50" data-flash-container>
+    <% if notice %>
+      <div class="notification notification-success">
+        <%= notice %>
+      </div>
+    <% end %>
+    <% if alert %>
+      <div class="notification notification-error">
+        <%= alert %>
+      </div>
+    <% end %>
+  </div>
+
+  <script>
+    setTimeout(() => {
+      const flash = document.querySelector('[data-flash-container]');
+      if (flash) {
+        flash.style.transition = 'opacity 0.5s ease';
+        flash.style.opacity = '0';
+        setTimeout(() => { flash.remove(); }, 500);
+      }
+    }, 3000);
+  </script>
 <% end %>

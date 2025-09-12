@@ -1,12 +1,17 @@
-// Placeholder share-modal.js to prevent 404 errors
-document.addEventListener('DOMContentLoaded', function() {
-  console.log('Share modal module loaded');
-  
-  // Only attempt to add listeners if the elements exist
-  const shareButton = document.querySelector('.share-button');
-  if (shareButton) {
-    shareButton.addEventListener('click', function() {
-      console.log('Share button clicked');
+document.addEventListener('turbo:load', function() {
+  const shareButton = document.getElementById('share-button-modal-trigger'); // Use a more specific ID
+  const shareModal = document.getElementById('share-modal');
+
+  if (shareButton && shareModal) {
+    shareButton.addEventListener('click', () => {
+      shareModal.classList.remove('hidden');
     });
+
+    const closeModalButton = shareModal.querySelector('.close-modal');
+    if (closeModalButton) {
+      closeModalButton.addEventListener('click', () => {
+        shareModal.classList.add('hidden');
+      });
+    }
   }
 });

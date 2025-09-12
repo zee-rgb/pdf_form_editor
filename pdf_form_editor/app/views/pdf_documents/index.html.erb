@@ -116,15 +116,19 @@
                     <%= pdf_document.title %>
                   </h3>
                   <div class="mt-1 flex items-center">
+                    <%# Normalize status: supports both enum (string) and raw integer %>
+                    <% status_name = pdf_document.status.is_a?(Integer) ? PdfDocument.statuses.key(pdf_document.status) : pdf_document.status %>
+                    <% status_name ||= "unknown" %>
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <%=
-                      case pdf_document.status
-                      when 'uploaded' then 'bg-gray-100 text-gray-800'
-                      when 'processing' then 'bg-yellow-100 text-yellow-800'
-                      when 'completed' then 'bg-green-100 text-green-800'
-                      when 'error' then 'bg-red-100 text-red-800'
+                      case status_name
+                      when "uploaded" then "bg-gray-100 text-gray-800"
+                      when "processing" then "bg-yellow-100 text-yellow-800"
+                      when "processed", "completed" then "bg-green-100 text-green-800"
+                      when "error" then "bg-red-100 text-red-800"
+                      else "bg-gray-100 text-gray-800"
                       end
                     %>">
-                      <%= pdf_document.status.humanize %>
+                      <%= status_name.to_s.humanize %>
                     </span>
                   </div>
                 </div>

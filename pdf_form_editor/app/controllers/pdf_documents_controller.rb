@@ -80,7 +80,17 @@ class PdfDocumentsController < ApplicationController
   def destroy
     authorize @pdf_document
     @pdf_document.destroy
-    redirect_to pdf_documents_path, notice: "PDF deleted successfully!"
+
+    respond_to do |format|
+      format.html { redirect_to pdf_documents_path, notice: "PDF deleted successfully!" }
+      format.turbo_stream do
+        flash.now[:notice] = "PDF deleted successfully!"
+        render turbo_stream: [
+          turbo_stream.remove(@pdf_document),
+          turbo_stream.replace("flash_messages", partial: "shared/flash_messages")
+        ]
+      end
+    end
   end
 
   def add_text
@@ -174,7 +184,7 @@ class PdfDocumentsController < ApplicationController
     authorize @pdf_document
     x = params[:x].to_f
     y = params[:y].to_f
-    content = params[:content].to_s.strip
+    content = (params[:content] || params[:signature_data]).to_s.strip
     font = params[:font] || "Dancing Script"
 
     # Log request parameters for debugging
@@ -276,49 +286,20 @@ class PdfDocumentsController < ApplicationController
       status: "error",
       message: e.message,
       details: e.class.name
-    }, status: :unprocessable_entity
+    }
   end
 
   def download
     authorize @pdf_document
-    Rails.logger.info "Download requested for PDF #{@pdf_document.id}"
 
-    # Ensure we have the latest data
-    @pdf_document.reload
-
-    # If we have overlay elements but no processed PDF, generate it first
-    if !@pdf_document.processed_pdf.attached? &&
-       @pdf_document.pdf_file.attached? &&
-       @pdf_document.overlay_elements.present?
-
-      Rails.logger.info "No processed PDF found but overlay elements exist. Generating PDF with overlays."
-      result = @pdf_document.apply_all_elements
-
-      if result
-        Rails.logger.info "Successfully generated processed PDF before download"
-        # Reload to ensure we get the latest attachment
-        @pdf_document.reload
-      else
-        Rails.logger.error "Failed to generate processed PDF before download"
-      end
-    end
-
-    # Send the processed PDF if it exists
-    if @pdf_document.processed_pdf.attached?
-      Rails.logger.info "Sending processed PDF for download, #{@pdf_document.processed_pdf.blob.byte_size} bytes"
-      send_data @pdf_document.processed_pdf.download,
-                filename: @pdf_document.processed_pdf.filename.to_s,
-                type: "application/pdf",
-                disposition: "attachment"
-    elsif @pdf_document.pdf_file.attached?
-      # Fallback to original PDF to avoid dead ends
-      Rails.logger.info "No processed PDF available, sending original PDF for download"
+    if @pdf_document.pdf_file.attached?
+      # For now, always download the original PDF to avoid processing issues
+      # TODO: Re-enable processed PDF once saving is fixed
       send_data @pdf_document.pdf_file.download,
                 filename: @pdf_document.pdf_file.filename.to_s,
                 type: "application/pdf",
                 disposition: "attachment"
     else
-      Rails.logger.error "No PDF file available for download, PDF ID: #{@pdf_document.id}"
       redirect_back(fallback_location: pdf_documents_path, alert: "No PDF available to download")
     end
   end

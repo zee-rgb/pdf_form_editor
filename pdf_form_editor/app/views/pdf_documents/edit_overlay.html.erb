@@ -2,12 +2,20 @@
 <% content_for :full_width, true %>
 
 <style>
+  .pdf-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  
   .pdf-element {
     position: absolute;
     background-color: transparent;
     border: none;
     padding: 3px 8px;
     z-index: 100;
+    /* Fixed positioning ensures elements stay in place */
+    transform: translate(-50%, -50%);
   }
   
   .pdf-element.signature {
@@ -53,7 +61,7 @@
     </div>
     <div class="flex gap-3 shrink-0 ml-auto whitespace-nowrap">
       <button id="save-changes-btn" class="btn bg-green-600 hover:bg-green-700 text-white">Save Changes</button>
-      <button id="download-pdf-btn" class="btn btn-primary text-white">Download PDF</button>
+      <%= link_to "Download PDF", download_pdf_document_path(@pdf_document), class: "btn btn-primary text-white", target: "_blank" %>
       <%= link_to "← Back to PDFs", pdf_documents_path, class: "btn" %>
     </div>
   </div>
@@ -242,14 +250,7 @@
       });
     }
     
-    // Download PDF button - this now generates and downloads
-    const downloadPdfBtn = document.getElementById('download-pdf-btn');
-    if (downloadPdfBtn) {
-      downloadPdfBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        generateAndDownloadPdf();
-      });
-    }
+    // Download functionality now handled by direct link - no JavaScript needed
     
     // Signature preview updates
     const signatureInput = document.getElementById('signature-input');
@@ -339,11 +340,23 @@
     const pdfContainer = document.getElementById('pdf-container');
     if (!pdfContainer) return;
     
+    // Get the PDF viewer dimensions for proper positioning
+    const pdfViewer = document.getElementById('pdf-viewer');
+    if (!pdfViewer) return;
+    
     const el = document.createElement('div');
     el.className = `pdf-element ${element.type === 'signature' ? 'signature' : ''}`;
+    
+    // Position relative to the PDF viewer's bounding rect
+    // This ensures the positions are fixed relative to the PDF content
+    // regardless of screen size or layout changes
+    const pdfRect = pdfViewer.getBoundingClientRect();
+    el.style.position = 'absolute';
     el.style.left = element.x + '%';
     el.style.top = element.y + '%';
     el.dataset.elementId = element.id;
+    el.dataset.xPercent = element.x;
+    el.dataset.yPercent = element.y;
     el.setAttribute('aria-label', element.type === 'signature' ? 'Signature element' : 'Text element');
     
     // Create content
@@ -478,11 +491,7 @@
       saveChangesBtn.parentNode.replaceChild(newBtn, saveChangesBtn);
     }
     
-    const downloadPdfBtn = document.getElementById('download-pdf-btn');
-    if (downloadPdfBtn) {
-      const newBtn = downloadPdfBtn.cloneNode(true);
-      downloadPdfBtn.parentNode.replaceChild(newBtn, downloadPdfBtn);
-    }
+    // Download is now a direct link - no event listeners to clean up
     
     // Remove signature preview listeners
     const signatureInput = document.getElementById('signature-input');
@@ -534,18 +543,64 @@
     
     if (text.length > 15) {
       return Math.max(baseSize - ((text.length - 15) * 0.7), 16) + 'px';
-
-function makeDraggable(el) {
-let isDragging = false;
-let startX, startY;
-let startLeft, startTop;
+    }
+    return baseSize + 'px';
+  }
+  
+  function makeDraggable(el) {
+    let isDragging = false;
+    let startX, startY;
+    let startLeft, startTop;
     
-el.addEventListener('mousedown', function(e) {
-  if (e.target.classList.contains('remove-btn')) return;
+    el.addEventListener('mousedown', function(e) {
+      if (e.target.classList.contains('remove-btn')) return;
       
-  isDragging = true;
-  startX = e.clientX;
-  startY = e.clientY;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      
+      startLeft = parseFloat(el.style.left);
+      startTop = parseFloat(el.style.top);
+      
+      el.classList.add('dragging');
+      e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      
+      const pdfContainer = document.getElementById('pdf-container');
+      if (!pdfContainer) return;
+      
+      const containerRect = pdfContainer.getBoundingClientRect();
+      
+      const deltaX = ((e.clientX - startX) / containerRect.width) * 100;
+      const deltaY = ((e.clientY - startY) / containerRect.height) * 100;
+      
+      const newLeft = Math.max(0, Math.min(95, startLeft + deltaX));
+      const newTop = Math.max(0, Math.min(95, startTop + deltaY));
+      
+      el.style.left = newLeft + '%';
+      el.style.top = newTop + '%';
+    });
+    
+    document.addEventListener('mouseup', function() {
+      if (!isDragging) return;
+      
+      isDragging = false;
+      el.classList.remove('dragging');
+      
+      const id = parseInt(el.dataset.elementId);
+      const index = overlayElements.findIndex(item => item.id === id);
+      
+      if (index !== -1) {
+        overlayElements[index].x = parseFloat(el.style.left);
+        overlayElements[index].y = parseFloat(el.style.top);
+      }
+    });
+  }
+  
+  function saveChanges() {
     // Show saving state
     const saveBtn = document.getElementById('save-changes-btn');
     if (saveBtn) {
@@ -710,26 +765,30 @@ el.addEventListener('mousedown', function(e) {
       const downloadUrl = `/pdf_documents/${pdfDocumentId}/download?t=${new Date().getTime()}`;
       console.log('Initiating download from:', downloadUrl);
       
+      // Create an actual anchor element for the download
+      const downloadLink = document.createElement('a');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = "processed-" + pdfDocumentId + ".pdf";
+      downloadLink.target = "_blank";
+      downloadLink.style.display = "none";
+      document.body.appendChild(downloadLink);
+      
+      // Trigger click on the download link
+      console.log('Triggering download click');
+      downloadLink.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
+      }, 1000);
+      
       // For a better UX, show instructions if download doesn't start
       setTimeout(() => {
-        showNotification(
-          "If download doesn't start automatically, <a href='" + downloadUrl + "' target='_blank' style='text-decoration:underline;color:white;'>click here</a>", 
-          'info'
-        );
+        const message = document.createElement('div');
+        message.innerHTML = `If download doesn't start automatically, <a href="${downloadUrl}" target="_blank" style="text-decoration:underline;color:white;">click here</a>`;
+        
+        showNotification(message.innerHTML, 'info');
       }, 3000);
-      
-      // Create a hidden iframe for download to avoid navigation issues
-      const downloadFrame = document.createElement('iframe');
-      downloadFrame.src = downloadUrl;
-      downloadFrame.style.display = 'none';
-      document.body.appendChild(downloadFrame);
-      
-      // Clean up iframe after download initiated
-      setTimeout(() => {
-        if (document.body.contains(downloadFrame)) {
-          document.body.removeChild(downloadFrame);
-        }
-      }, 5000);
     })
     .catch(error => {
       console.error('Error saving/downloading PDF:', error);
