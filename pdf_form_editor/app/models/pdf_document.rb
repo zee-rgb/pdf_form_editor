@@ -86,17 +86,46 @@ class PdfDocument < ApplicationRecord
   def add_signature_overlay(x, y, signature_data, page = 0)
     add_signature_element(x, y, signature_data)
   end
+  
+  # Deduplicate overlay elements to prevent duplications
+  def deduplicate_elements
+    return if overlay_elements.blank?
+    
+    unique_elements = []
+    seen_elements = {}
+    
+    # Process elements and keep only unique ones based on content and position
+    overlay_elements.each do |element|
+      # Create a unique key based on content and position
+      key = "#{element['type']}_#{element['content']}_#{element['x']}_#{element['y']}"
+      
+      # Only keep the element if we haven't seen it before
+      unless seen_elements[key]
+        unique_elements << element
+        seen_elements[key] = true
+      end
+    end
+    
+    # Update the document with deduplicated elements
+    self.overlay_elements = unique_elements
+    save
+    
+    # Return the deduplicated elements
+    unique_elements
+  end
 
   # Apply overlay elements to the PDF using Prawn
   def apply_all_elements
-    # Create a unique logger for this run to make debugging easier
-    run_logger = Logger.new(Rails.root.join("log", "pdf_apply_#{id}_#{Time.now.to_i}.log"))
-    run_logger.info "START: Applying overlay elements to PDF #{id} using Prawn"
+    Rails.logger.info "Starting apply_all_elements for PDF #{id}"
+    run_logger = Rails.logger
+    
+    # Update status to processing
+    update_column(:status, :processing) if status != "processing"
 
-    # Check if PDF file is attached
+    # Check if PDF file exists
     unless pdf_file.attached?
-      run_logger.error "FAIL: No PDF file attached to document #{id}"
-      update(status: :error)
+      run_logger.error "No PDF file attached to document #{id}"
+      update_column(:status, :error)
       return false
     end
 
@@ -104,8 +133,12 @@ class PdfDocument < ApplicationRecord
     if overlay_elements.blank? || overlay_elements.empty?
       run_logger.warn "SKIP: No overlay elements for PDF #{id}, nothing to apply. This is a success."
       # Still consider this a success since there's nothing to do
+      update_column(:status, :uploaded) # Keep it as uploaded since no changes
       return true
     end
+    
+    # Deduplicate overlay elements first
+    deduplicate_elements
 
     begin
       require "prawn"
@@ -164,21 +197,71 @@ class PdfDocument < ApplicationRecord
         # Map coordinates from web view (top-left origin) to PDF (bottom-left origin)
         # and adjust to match form fields more precisely
 
-        # Dynamic positioning adjustments based on element type
+        # Dynamic positioning adjustments based on element type and field positions
         if element["type"] == "signature"
-          # X coordinate mapping for signatures - signatures need different offset
-          x = (pdf.bounds.width * (x_pct / 100.0)) - 5
-
-          # Y coordinate mapping for signatures
-          y_correction = 30 # Lower y-correction for signatures
-          y = pdf.bounds.height * (1 - (y_pct / 100.0)) + y_correction
+          # Get any additional positioning info that might be in the element data
+          field_name = element["field"] || ""
+          
+          # Adjust for specific fields if information exists
+          if field_name.present?
+            case field_name.downcase
+            when /name/
+              x = (pdf.bounds.width * 0.35)
+              y = (pdf.bounds.height * 0.82)
+            when /signature/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.20)
+            when /date/
+              x = (pdf.bounds.width * 0.80)
+              y = (pdf.bounds.height * 0.20)
+            else
+              # Default positioning with improved offset
+              x = (pdf.bounds.width * (x_pct / 100.0)) - 3
+              y = pdf.bounds.height * (1 - (y_pct / 100.0)) + 40
+            end
+          else
+            # Use exact percentage position with better calibration
+            x = (pdf.bounds.width * (x_pct / 100.0)) - 3
+            y = pdf.bounds.height * (1 - (y_pct / 100.0)) + 40
+          end
         else
-          # X coordinate mapping for regular text - text needs different offset
-          x = (pdf.bounds.width * (x_pct / 100.0)) - 20
-
-          # Y coordinate mapping for text
-          y_correction = 45 # Higher y-correction for text
-          y = pdf.bounds.height * (1 - (y_pct / 100.0)) + y_correction
+          # Get any additional positioning info that might be in the element data
+          field_name = element["field"] || ""
+          
+          # Handle specific field types for text elements
+          if field_name.present?
+            case field_name.downcase
+            when /name/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.82)
+            when /email/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.78)
+            when /address/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.70)
+            when /city/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.64)
+            when /state/
+              x = (pdf.bounds.width * 0.28)
+              y = (pdf.bounds.height * 0.60)
+            when /zip/
+              x = (pdf.bounds.width * 0.70)
+              y = (pdf.bounds.height * 0.60)
+            when /phone/
+              x = (pdf.bounds.width * 0.40)
+              y = (pdf.bounds.height * 0.74)
+            else
+              # Improved general positioning for text
+              x = (pdf.bounds.width * (x_pct / 100.0)) - 10
+              y = pdf.bounds.height * (1 - (y_pct / 100.0)) + 50
+            end
+          else
+            # Improved general positioning for text
+            x = (pdf.bounds.width * (x_pct / 100.0)) - 10
+            y = pdf.bounds.height * (1 - (y_pct / 100.0)) + 50
+          end
         end
 
         Rails.logger.info "Adding element #{index+1}: '#{content}' at (#{x}, #{y})"
@@ -188,43 +271,86 @@ class PdfDocument < ApplicationRecord
           # Special styling for signatures - clean black text without borders or underlines
           pdf.fill_color "000000" # Black
 
-          # Map web fonts to PDF fonts specifically designed for signatures
-          # Use various script/handwriting fonts in Prawn for better signature appearance
+          # Use proper cursive fonts for signatures
+          # We need to embed custom fonts to match the web fonts exactly
           font_name = element["font"] || "Dancing Script"
-
-          # Custom rendering approach to prevent overlines
+          
+          # First, register the custom fonts with Prawn
+          pdf.font_families.update(
+            "dancing-script" => {
+              normal: "#{Rails.root.join('app', 'assets', 'fonts', 'DancingScript-Regular.ttf')}"
+            },
+            "great-vibes" => {
+              normal: "#{Rails.root.join('app', 'assets', 'fonts', 'GreatVibes-Regular.ttf')}"
+            },
+            "allura" => {
+              normal: "#{Rails.root.join('app', 'assets', 'fonts', 'Allura-Regular.ttf')}"
+            }
+          )
+          
+          # Use the exact fonts from the web interface
           case font_name
           when "Dancing Script"
-            # Use Courier-Oblique for more hand-written feel
-            pdf.font("Courier-Oblique") do
-              pdf.text_box content,
-                at: [ x, y ],
-                size: 16,
-                overflow: :shrink_to_fit,
-                min_font_size: 8
+            if File.exist?(Rails.root.join('app', 'assets', 'fonts', 'DancingScript-Regular.ttf'))
+              pdf.font("dancing-script") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 16,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
+            else
+              # Fallback if font file doesn't exist
+              pdf.font("Times-Italic") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 16,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
             end
           when "Great Vibes"
-            # Use Helvetica-Bold-Italic for fancier signature
-            pdf.font("Helvetica-BoldOblique") do
-              pdf.text_box content,
-                at: [ x, y ],
-                size: 17,
-                overflow: :shrink_to_fit,
-                min_font_size: 8
+            if File.exist?(Rails.root.join('app', 'assets', 'fonts', 'GreatVibes-Regular.ttf'))
+              pdf.font("great-vibes") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 17,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
+            else
+              # Fallback if font file doesn't exist
+              pdf.font("Times-Italic") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 17,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
             end
           when "Allura"
-            # Use Times-BoldItalic for elegant signature
-            pdf.font("Times-BoldItalic") do
-              pdf.text_box content,
-                at: [ x, y ],
-                size: 16,
-                overflow: :shrink_to_fit,
-                min_font_size: 8
+            if File.exist?(Rails.root.join('app', 'assets', 'fonts', 'Allura-Regular.ttf'))
+              pdf.font("allura") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 16,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
+            else
+              # Fallback if font file doesn't exist
+              pdf.font("Times-Italic") do
+                pdf.text_box content, 
+                  at: [ x, y ],
+                  size: 16,
+                  overflow: :shrink_to_fit,
+                  min_font_size: 8
+              end
             end
           else
-            # Default to Times-Italic for any other font
+            # Default fallback
             pdf.font("Times-Italic") do
-              pdf.text_box content,
+              pdf.text_box content, 
                 at: [ x, y ],
                 size: 16,
                 overflow: :shrink_to_fit,
@@ -295,14 +421,23 @@ class PdfDocument < ApplicationRecord
         return false
       end
 
-      # Update status and return success
-      update(status: :processed)
-      run_logger.info "SUCCESS: Successfully applied all elements to PDF #{id}"
+      # Save the processed PDF to ActiveStorage
+      processed_pdf.attach(io: File.open(output_path), filename: "processed-#{id}.pdf", content_type: "application/pdf")
+
+      # Clean up working files
+      FileUtils.rm_rf(work_dir) if File.directory?(work_dir)
+
+      # Set the status to 'completed' after successful processing
+      update_column(:status, :completed)
+      
+      Rails.logger.info "Finished apply_all_elements successfully for PDF #{id}"
       true
     rescue => e
-      run_logger.error "CRASH: Error applying PDF elements: #{e.message}"
-      run_logger.error e.backtrace.join("\n")
-      update(status: :error)
+      Rails.logger.error "Error in apply_all_elements for PDF #{id}: #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      
+      # Set status to error when exception occurs
+      update_column(:status, :error)
       false
     end
   end
