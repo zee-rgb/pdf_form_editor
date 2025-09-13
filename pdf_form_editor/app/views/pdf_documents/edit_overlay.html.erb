@@ -357,6 +357,9 @@
     
     const textContent = textInput.value.trim();
     
+    // Try to detect what field this might be based on content
+    const fieldHint = detectFieldType(textContent);
+    
     // Generate a unique ID using timestamp + random to ensure uniqueness
     const uniqueId = Date.now() + Math.floor(Math.random() * 10000);
     
@@ -364,8 +367,10 @@
       id: uniqueId,
       type: 'text',
       content: textContent,
+      field: fieldHint, // Add field hint for better positioning
       x: selectedPosition.x,
-      y: selectedPosition.y
+      y: selectedPosition.y,
+      saved: true // Mark as saved from the beginning
     };
     
     // Save immediately to prevent duplication
@@ -399,6 +404,9 @@
     const signatureContent = signatureInput.value.trim();
     const fontValue = fontSelect.value;
     
+    // Try to detect what field this might be (likely signature or name)
+    const fieldHint = 'signature'; // Default to signature field type
+    
     // Generate a unique ID using timestamp + random to ensure uniqueness
     const uniqueId = Date.now() + Math.floor(Math.random() * 10000);
     
@@ -407,8 +415,10 @@
       type: 'signature',
       content: signatureContent,
       font: fontValue,
+      field: fieldHint,
       x: selectedPosition.x,
-      y: selectedPosition.y
+      y: selectedPosition.y,
+      saved: true // Mark as saved from the beginning
     };
     
     // Save immediately to prevent duplication
@@ -583,6 +593,9 @@
     // Create the visual DOM element
     createElementInDOM(element);
     
+    // Flag element as saved so it will be included in downloads
+    element.saved = true;
+    
     // Save to server immediately to prevent duplication on page reload
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     if (!csrfToken) {
@@ -590,10 +603,12 @@
       return;
     }
     
-    // Prepare data to send - only the new element
+    // Prepare data to send with all elements to ensure consistency
     const dataToSend = JSON.stringify({
       elements: overlayElements
     });
+    
+    console.log('Saving elements to server:', overlayElements);
     
     // Make the save request
     fetch(`/pdf_documents/${pdfDocumentId}/save_elements`, {
@@ -607,13 +622,21 @@
     .then(response => {
       if (!response.ok) {
         console.error('Failed to save new element');
+        // Mark element as unsaved if server rejected it
+        element.saved = false;
       } else {
         console.log('Element saved successfully');
+        // Ensure we update the global state consistently
+        element.saved = true;
       }
     })
     .catch(error => {
       console.error('Error saving element:', error);
+      element.saved = false;
     });
+    
+    // Return the element for chaining
+    return element;
   }
   
   // Helper function to safely remove event listeners
@@ -697,6 +720,36 @@
       return Math.max(baseSize - ((text.length - 15) * 0.7), 16) + 'px';
     }
     return baseSize + 'px';
+  }
+  
+  // Helper function to detect what field a text input might be for
+  function detectFieldType(text) {
+    text = text.toLowerCase().trim();
+    
+    // Check for email format (contains @ symbol)
+    if (text.includes('@')) {
+      return 'email';
+    }
+    
+    // Check for common field types based on content patterns
+    if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(text)) {
+      return 'email';
+    } else if (/^\d{3}-?\d{3}-?\d{4}$/.test(text) || /^\(\d{3}\)-?\d{3}-?\d{4}$/.test(text)) {
+      return 'phone';
+    } else if (/^\d{5}(-\d{4})?$/.test(text)) {
+      return 'zip';
+    } else if (/^[A-Z][a-zA-Z\s.]{0,25}$/.test(text) && text.length <= 30) {
+      return 'name';
+    } else if (/[0-9]+ [A-Za-z\s]+/.test(text)) {
+      return 'address';
+    } else if (text.length === 2 && /^[A-Z]{2}$/.test(text)) {
+      return 'state';
+    } else if (text.length <= 20 && !/\d/.test(text)) {
+      return 'city';
+    }
+    
+    // Default if no pattern matches
+    return '';
   }
   
   function saveChanges() {
@@ -826,21 +879,32 @@
       downloadBtn.disabled = true;
     }
     
-    // Make sure we only have unique elements before saving
+    // Make sure we have all elements - both saved and floating ones
+    // We'll deduplicate them to avoid any issues
     const uniqueElements = [];
     const processedIds = new Set();
+    const processedPositions = new Set();
     
+    // Process all elements to keep only unique ones and ensure they're properly saved
     overlayElements.forEach(element => {
-      if (!processedIds.has(element.id)) {
+      // Create a position key to catch duplicates at same position
+      const posKey = `${element.type}_${element.x.toFixed(1)}_${element.y.toFixed(1)}_${element.content}`;
+      
+      // Only include if we haven't seen this ID or position before
+      if (!processedIds.has(element.id) && !processedPositions.has(posKey)) {
+        // Mark as saved so it gets included in the download
+        element.saved = true;
         uniqueElements.push(element);
         processedIds.add(element.id);
+        processedPositions.add(posKey);
       }
     });
     
-    // Replace the original array with unique elements
+    // Replace the original array with cleaned unique elements
     overlayElements = uniqueElements;
+    console.log('Preparing download with elements:', overlayElements);
     
-    // First save current state of overlays
+    // Save current state of overlays including floating elements
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     if (!csrfToken) {
       window.showNotification('Security error: CSRF token not found', 'error');
