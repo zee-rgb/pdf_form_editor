@@ -176,46 +176,53 @@
   
   // Ensure we can access the global showNotification function
   function checkNotificationFunction() {
-    if (typeof window.showNotification !== 'function') {
-      // If the global function isn't available, define a fallback
-      window.showNotification = function(message, type = 'info') {
-        console.log(`Notification (${type}): ${message}`);
-        const container = document.getElementById('notification-container');
-        if (!container) return;
-        
-        const notification = document.createElement('div');
-        notification.className = `alert alert-${type} shadow-lg mb-3`;
-        notification.innerHTML = `
-          <div class="flex items-center justify-between p-4">
-            <div>${message}</div>
-            <button class="close-btn ml-4" aria-label="Close notification">&times;</button>
-          </div>
-        `;
-        
-        // Add close button functionality
-        const closeBtn = notification.querySelector('.close-btn');
-        if (closeBtn) {
-          closeBtn.addEventListener('click', () => {
-            notification.remove();
-          });
-        }
-        
-        // Auto-remove after 5 seconds unless it's an error
-        if (type !== 'error') {
-          setTimeout(() => {
-            if (notification.parentNode) {
-              notification.remove();
-            }
-          }, 5000);
-        }
-        
-        container.appendChild(notification);
-      };
-      
+    if (!window.showNotification) {
       console.log('Created fallback notification function');
+      // Create a fallback notification function
+      window.showNotification = function(message, type = 'info') {
+        // Basic implementation for when the notification component isn't loaded
+        console.log(`Notification (${type}):`, message);
+        
+        // Optionally try to show in UI if we can find a container
+        const notificationArea = document.getElementById('notification-area');
+        if (notificationArea) {
+          const alertDiv = document.createElement('div');
+          alertDiv.className = `alert alert-${type} my-2 p-2 rounded shadow-sm`;
+          alertDiv.innerHTML = message;
+          notificationArea.appendChild(alertDiv);
+          
+          // Auto-dismiss after 5 seconds unless it's an error
+          if (type !== 'error') {
+            setTimeout(() => {
+              if (alertDiv && alertDiv.parentNode) {
+                alertDiv.parentNode.removeChild(alertDiv);
+              }
+            }, 5000);
+          }
+        }
+      };
     } else {
       console.log('Global showNotification function found');
     }
+    
+    // Add error prevention for runtime.lastError messages
+    preventRuntimeErrors();
+  }
+  
+  // Prevent runtime.lastError messages in console
+  function preventRuntimeErrors() {
+    // Override console.error for runtime.lastError messages
+    const originalConsoleError = console.error;
+    console.error = function() {
+      // Skip logging runtime.lastError about message port closed
+      if (arguments[0] && 
+          typeof arguments[0] === 'string' && 
+          (arguments[0].includes('message port closed') || 
+           arguments[0].includes('runtime.lastError'))) {
+        return;
+      }
+      return originalConsoleError.apply(this, arguments);
+    };
   }
   
   // Initialize immediately and also when the DOM is fully loaded and when Turbo navigates
