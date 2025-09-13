@@ -161,37 +161,80 @@ class PdfDocument < ApplicationRecord
 
         # Convert percentage to points (assuming page 1 for now)
         # Prawn uses coordinate system with origin at bottom left
-        x = pdf.bounds.width * (x_pct / 100.0)
-        y = pdf.bounds.height * (1 - (y_pct / 100.0)) # Invert Y coordinate
+        # Map coordinates from web view (top-left origin) to PDF (bottom-left origin)
+        # and adjust to match form fields more precisely
+
+        # Dynamic positioning adjustments based on element type
+        if element["type"] == "signature"
+          # X coordinate mapping for signatures - signatures need different offset
+          x = (pdf.bounds.width * (x_pct / 100.0)) - 5
+
+          # Y coordinate mapping for signatures
+          y_correction = 30 # Lower y-correction for signatures
+          y = pdf.bounds.height * (1 - (y_pct / 100.0)) + y_correction
+        else
+          # X coordinate mapping for regular text - text needs different offset
+          x = (pdf.bounds.width * (x_pct / 100.0)) - 20
+
+          # Y coordinate mapping for text
+          y_correction = 45 # Higher y-correction for text
+          y = pdf.bounds.height * (1 - (y_pct / 100.0)) + y_correction
+        end
 
         Rails.logger.info "Adding element #{index+1}: '#{content}' at (#{x}, #{y})"
 
         # Draw text with visible formatting based on element type
         if element["type"] == "signature"
-          # Special styling for signatures - BLUE ITALIC WITH UNDERLINE
-          pdf.fill_color "000066" # Dark blue
-          pdf.font("Helvetica-Oblique") { pdf.text_box content, at: [ x, y ], size: 16 }
-
-          # Add underline
-          pdf.stroke_color "000066" # Dark blue
-          pdf.line [ x, y-4 ], [ x + pdf.width_of(content, size: 16), y-4 ]
-          pdf.stroke
-        else
-          # Regular text with WHITE BACKGROUND AND BLACK BORDER
-          text_width = pdf.width_of(content, size: 12) + 10
-          text_height = 16
-
-          # Draw white background
-          pdf.fill_color "FFFFFF" # White
-          pdf.fill_rectangle [ x, y+6 ], text_width, text_height
-
-          # Draw border
-          pdf.stroke_color "000000" # Black
-          pdf.stroke_rectangle [ x, y+6 ], text_width, text_height
-
-          # Draw text
+          # Special styling for signatures - clean black text without borders or underlines
           pdf.fill_color "000000" # Black
-          pdf.text_box content, at: [ x+5, y+4 ], size: 12
+
+          # Map web fonts to PDF fonts specifically designed for signatures
+          # Use various script/handwriting fonts in Prawn for better signature appearance
+          font_name = element["font"] || "Dancing Script"
+
+          # Custom rendering approach to prevent overlines
+          case font_name
+          when "Dancing Script"
+            # Use Courier-Oblique for more hand-written feel
+            pdf.font("Courier-Oblique") do
+              pdf.text_box content,
+                at: [ x, y ],
+                size: 16,
+                overflow: :shrink_to_fit,
+                min_font_size: 8
+            end
+          when "Great Vibes"
+            # Use Helvetica-Bold-Italic for fancier signature
+            pdf.font("Helvetica-BoldOblique") do
+              pdf.text_box content,
+                at: [ x, y ],
+                size: 17,
+                overflow: :shrink_to_fit,
+                min_font_size: 8
+            end
+          when "Allura"
+            # Use Times-BoldItalic for elegant signature
+            pdf.font("Times-BoldItalic") do
+              pdf.text_box content,
+                at: [ x, y ],
+                size: 16,
+                overflow: :shrink_to_fit,
+                min_font_size: 8
+            end
+          else
+            # Default to Times-Italic for any other font
+            pdf.font("Times-Italic") do
+              pdf.text_box content,
+                at: [ x, y ],
+                size: 16,
+                overflow: :shrink_to_fit,
+                min_font_size: 8
+            end
+          end
+        else
+          # Regular text - plain black text without border or background
+          pdf.fill_color "000000" # Black
+          pdf.text_box content, at: [ x, y ], size: 12
         end
 
         # Reset colors

@@ -99,3 +99,4 @@ group :test do
 end
 
 gem "prawn", "~> 2.5"
+gem "prawn-templates", "~> 0.1.2" # Required for PDF templates and overlay functionality

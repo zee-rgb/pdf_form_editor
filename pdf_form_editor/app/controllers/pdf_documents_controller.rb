@@ -292,9 +292,19 @@ class PdfDocumentsController < ApplicationController
   def download
     authorize @pdf_document
 
-    if @pdf_document.pdf_file.attached?
-      # For now, always download the original PDF to avoid processing issues
-      # TODO: Re-enable processed PDF once saving is fixed
+    # First ensure any pending changes are applied
+    if @pdf_document.overlay_elements.present?
+      @pdf_document.apply_all_elements
+      @pdf_document.reload
+    end
+
+    # Download processed PDF if available, otherwise original
+    if @pdf_document.processed_pdf.attached?
+      send_data @pdf_document.processed_pdf.download,
+                filename: @pdf_document.processed_pdf.filename.to_s,
+                type: "application/pdf",
+                disposition: "attachment"
+    elsif @pdf_document.pdf_file.attached?
       send_data @pdf_document.pdf_file.download,
                 filename: @pdf_document.pdf_file.filename.to_s,
                 type: "application/pdf",
@@ -393,13 +403,33 @@ class PdfDocumentsController < ApplicationController
   # Apply all changes and generate the final PDF
   def apply_changes
     authorize @pdf_document
+
+    # Force JSON format for all XHR/AJAX requests
+    request.format = :json if request.xhr?
+
     Rails.logger.info "Starting apply_changes for PDF #{@pdf_document.id}"
     Rails.logger.info "Request format: #{request.format}, XHR: #{request.xhr?}, Accept: #{request.headers['Accept']}"
 
-    # Force JSON response for fetch requests from our JavaScript
-    if request.xhr? || request.headers["Accept"].to_s.include?("application/json")
-      request.format = :json
-      Rails.logger.info "Forcing JSON response format"
+    # Check if PDF file exists
+    if @pdf_document.pdf_file.attached?
+      # PDF exists, proceed
+      if !@pdf_document.pdf_file.content_type.include?("pdf")
+        # Not a PDF
+        if request.xhr? || request.format.json?
+          render json: { status: "error", message: "Attached file is not a PDF" }, status: :unprocessable_entity
+          return
+        else
+          return redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "Attached file is not a PDF"
+        end
+      end
+    else
+      # No PDF attached
+      if request.xhr? || request.format.json?
+        render json: { status: "error", message: "No PDF file attached" }, status: :unprocessable_entity
+        return
+      else
+        return redirect_to overlay_edit_pdf_document_path(@pdf_document), alert: "No PDF file attached"
+      end
     end
 
     # First verify if PDF file is attached and elements exist
